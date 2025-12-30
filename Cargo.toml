@@ -1,6 +1,10 @@
 [package]
-name = "mini-cycle-script-loader"
+name = "phrase-scripts-reloader"
 version = "0.1.0"
 edition = "2024"
+
+[lib]
+name = "phrase_scripts_reloader"
+crate-type=["cdylib"]
 
 [dependencies]

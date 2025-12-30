@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "mini-cycle-script-loader"
+name = "phrase-scripts-reloader"
 version = "0.1.0"
