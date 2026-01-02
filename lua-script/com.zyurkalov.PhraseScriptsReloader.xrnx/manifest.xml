@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RenoiseScriptingTool doc_version="0">
+    <Id>com.zyurkalov.PhraseScriptsReloader</Id>
+    <Name>Phrase Scripts Reloader</Name>
+    <Version>1.0.1</Version>
+    <Author>Zyurkalov</Author>
+    <Description>Reloads scripts TODO: add the description</Description>
+    <ApiVersion>6.2</ApiVersion>
+    <Category>Tool Development</Category>
+    <Homepage>http://scripting.renoise.com</Homepage>
+    <Icon>icon.png</Icon>
+    <Platform>Windows, Mac, Linux</Platform>
+</RenoiseScriptingTool>
