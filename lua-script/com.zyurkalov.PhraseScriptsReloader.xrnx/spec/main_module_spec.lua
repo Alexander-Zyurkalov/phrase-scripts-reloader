@@ -1,295 +1,467 @@
-local main_module = require("main_module")
+local MainModule = require("main_module")
 local IndexRegistry = require("index_registry")
-local test_helpers = require("spec.test_helpers")
+local TestHelpers = require("spec.test_helpers")
 
-test_helpers.setup_renoise_mock()
+-- Test case definitions for reordering scenarios
+-- Each case defines: description, initial_position, desired_position, expected_final_order
+local reorder_test_cases = {
+    {
+        desc = "from the beginning to the end",
+        initial_pos = 1,
+        desired_pos = 4,
+        moves_forward = true,
+        expected_instrument_order = { "Guitar", "Drums", "Piano" },  -- for instruments
+        expected_phrase_order = { "Verse", "Chorus", "Intro" },
+    },
+    {
+        desc = "from the end to the beginning",
+        initial_pos = 3,
+        desired_pos = 1,
+        moves_forward = false,
+        expected_instrument_order = { "Drums", "Piano", "Guitar" },
+        expected_phrase_order = { "Chorus", "Intro", "Verse" },
+    },
+    {
+        desc = "from the middle to the end",
+        initial_pos = 2,
+        desired_pos = 4,
+        moves_forward = true,
+        expected_instrument_order = { "Piano", "Drums", "Guitar" },
+        expected_phrase_order = { "Intro", "Chorus", "Verse" },
+    },
+    {
+        desc = "from the middle to the beginning",
+        initial_pos = 2,
+        desired_pos = 1,
+        moves_forward = false,
+        expected_instrument_order = { "Guitar", "Piano", "Drums" },
+        expected_phrase_order = { "Verse", "Intro", "Chorus" },
+    },
+    {
+        desc = "from the end to the middle",
+        initial_pos = 3,
+        desired_pos = 2,
+        moves_forward = false,
+        expected_instrument_order = { "Piano", "Drums", "Guitar" },
+        expected_phrase_order = { "Intro", "Chorus", "Verse" },
+    },
+    {
+        desc = "from the beginning to the middle",
+        initial_pos = 1,
+        desired_pos = 3,
+        moves_forward = true,
+        expected_instrument_order = { "Guitar", "Piano", "Drums" },
+        expected_phrase_order = { "Verse", "Intro", "Chorus" },
+    },
+    {
+        desc = "adjacent forward (position 1 to 2)",
+        initial_pos = 1,
+        desired_pos = 3,
+        moves_forward = true,
+        expected_instrument_order = { "Guitar", "Piano", "Drums" },
+        expected_phrase_order = { "Verse", "Intro", "Chorus" },
+    },
+    {
+        desc = "adjacent backward (position 2 to 1)",
+        initial_pos = 2,
+        desired_pos = 1,
+        moves_forward = false,
+        expected_instrument_order = { "Guitar", "Piano", "Drums" },
+        expected_phrase_order = { "Verse", "Intro", "Chorus" },
+    },
+}
 
-describe("Reproducing Renoise Instrument Swap", function()
+--- Helper to execute instrument swap-remove pattern and return results
+--- @param registry IndexRegistry
+--- @param main MainModule
+--- @param test_case table
+--- @return number nil_id The ID of the inserted nil instrument
+local function execute_instrument_reorder(registry, main, test_case)
+    local nil_instrument_id = registry:register_instrument(test_case.desired_pos, nil)
+
+    local swap_index1, remove_index
+    if test_case.moves_forward then
+        swap_index1 = test_case.initial_pos
+        remove_index = test_case.initial_pos
+    else
+        swap_index1 = test_case.initial_pos + 1
+        remove_index = test_case.initial_pos + 1
+    end
+
+    local notification = { index1 = swap_index1, index2 = test_case.desired_pos }
+    main:swap_instrument_indexes(notification)
+    main:remove_instrument({ index = remove_index })
+
+    return nil_instrument_id
+end
+
+--- Helper to execute phrase swap-remove pattern and return results
+--- @param registry IndexRegistry
+--- @param main MainModule
+--- @param instrument_id number
+--- @param test_case table
+--- @return number nil_id The ID of the inserted nil phrase
+local function execute_phrase_reorder(registry, main, instrument_id, test_case)
+    local nil_phrase_id = registry:register_phrase(instrument_id, test_case.desired_pos, nil)
+
+    local swap_index1, remove_index
+    if test_case.moves_forward then
+        swap_index1 = test_case.initial_pos
+        remove_index = test_case.initial_pos
+    else
+        swap_index1 = test_case.initial_pos + 1
+        remove_index = test_case.initial_pos + 1
+    end
+
+    local notification = { index1 = swap_index1, index2 = test_case.desired_pos }
+    main:swap_phrases_indexes(instrument_id, notification)
+    main:remove_phrase(instrument_id, { index = remove_index })
+
+    return nil_phrase_id
+end
+
+describe("Instrument Reordering via Insert-Swap-Remove Pattern", function()
     local registry
     local rust_backend_mock
+    local main
 
     before_each(function()
         registry = IndexRegistry.new()
-        IndexRegistry.register_instrument(registry, 1, "Piano")
-        IndexRegistry.register_instrument(registry, 2, "Guitar")
-        IndexRegistry.register_instrument(registry, 3, "Drums")
+        registry:register_instrument(1, "Piano")
+        registry:register_instrument(2, "Guitar")
+        registry:register_instrument(3, "Drums")
 
-        IndexRegistry.register_phrase(registry, 1, 1, "Piano Intro")
-        IndexRegistry.register_phrase(registry, 1, 2, "Piano Verse")
-        IndexRegistry.register_phrase(registry, 1, 3, "Piano Chorus")
+        registry:register_phrase(1, 1, "Piano Intro")
+        registry:register_phrase(1, 2, "Piano Verse")
+        registry:register_phrase(1, 3, "Piano Chorus")
 
-        IndexRegistry.register_phrase(registry, 2, 1, "Guitar Intro")
-        IndexRegistry.register_phrase(registry, 2, 2, "Guitar Verse")
-        IndexRegistry.register_phrase(registry, 2, 3, "Guitar Chorus")
+        registry:register_phrase(2, 1, "Guitar Intro")
+        registry:register_phrase(2, 2, "Guitar Verse")
+        registry:register_phrase(2, 3, "Guitar Chorus")
 
-        IndexRegistry.register_phrase(registry, 3, 1, "Drums Intro")
-        IndexRegistry.register_phrase(registry, 3, 2, "Drums Verse")
-        IndexRegistry.register_phrase(registry, 3, 3, "Drums Chorus")
+        registry:register_phrase(3, 1, "Drums Intro")
+        registry:register_phrase(3, 2, "Drums Verse")
+        registry:register_phrase(3, 3, "Drums Chorus")
 
-        rust_backend_mock = test_helpers.create_rust_backend_mock()
+        rust_backend_mock = TestHelpers.create_rust_backend_mock()
+        main = MainModule.new(rust_backend_mock, registry)
     end)
 
-    it("Swaps from the beginning to the end", function()
-        local initial_piano_position = 1
-        local desired_piano_position = 4
-        local notification = { index1 = initial_piano_position, index2 = desired_piano_position }
+    for _, test_case in ipairs(reorder_test_cases) do
+        it("Swaps " .. test_case.desc, function()
+            execute_instrument_reorder(registry, main, test_case)
 
-        -- Renoise inserts here automatically
-        IndexRegistry.register_instrument(registry, desired_piano_position, nil)
-        main_module.swap(registry, notification, rust_backend_mock, IndexRegistry)
-        -- Renoise remove the position where the inserted element was
-        main_module.remove(registry, { index = initial_piano_position }, rust_backend_mock, IndexRegistry)
+            -- Verify final instrument positions
+            local _, i1 = registry:find_instrument_by_index(1)
+            local _, i2 = registry:find_instrument_by_index(2)
+            local _, i3 = registry:find_instrument_by_index(3)
+            local _, i4 = registry:find_instrument_by_index(4)
 
-        local _, i1 = IndexRegistry.find_instrument_by_index(registry, 1)
-        local _, i2 = IndexRegistry.find_instrument_by_index(registry, 2)
-        local _, i3 = IndexRegistry.find_instrument_by_index(registry, 3)
-        local _, i4 = IndexRegistry.find_instrument_by_index(registry, 4)
+            assert.are.equal(test_case.expected_instrument_order[1], i1.name)
+            assert.are.equal(test_case.expected_instrument_order[2], i2.name)
+            assert.are.equal(test_case.expected_instrument_order[3], i3.name)
+            assert.is_nil(i4)
 
-        assert.are.equal("Guitar", i1.name)
-        assert.are.equal("Drums", i2.name)
-        assert.are.equal("Piano", i3.name)
-        assert.is_nil(i4)
+            assert.are.equal(3, registry:get_instrument_count())
+            assert.is_true(rust_backend_mock.set_new_instrument_indexes_called)
+            assert.is_true(rust_backend_mock.remove_instrument_called)
+        end)
+    end
+end)
 
-        assert.are.equal(3, IndexRegistry.get_instrument_count(registry))
-        assert.is_true(rust_backend_mock.swap_instruments_called)
-        assert.is_true(rust_backend_mock.remove_instrument_called)
+describe("Phrase Reordering via Insert-Swap-Remove Pattern", function()
+    local registry
+    local rust_backend_mock
+    local main
+    local instrument_id
+
+    before_each(function()
+        registry = IndexRegistry.new()
+        instrument_id = registry:register_instrument(1, "Piano")
+
+        registry:register_phrase(instrument_id, 1, "Intro")
+        registry:register_phrase(instrument_id, 2, "Verse")
+        registry:register_phrase(instrument_id, 3, "Chorus")
+
+        rust_backend_mock = TestHelpers.create_rust_backend_mock()
+        main = MainModule.new(rust_backend_mock, registry)
     end)
 
-    it("Swaps from the end to the beginning", function()
-        -- Initial: Piano(1), Guitar(2), Drums(3)
-        -- Goal: Drums(1), Piano(2), Guitar(3)
-        local initial_drums_position = 3
-        local desired_drums_position = 1
+    for _, test_case in ipairs(reorder_test_cases) do
+        it("Swaps phrases " .. test_case.desc, function()
+            execute_phrase_reorder(registry, main, instrument_id, test_case)
 
-        -- Renoise inserts at position 1, shifting everything right
-        -- State becomes: nil(1), Piano(2), Guitar(3), Drums(4)
-        IndexRegistry.register_instrument(registry, desired_drums_position, nil)
+            -- Verify final phrase positions
+            local _, p1 = registry:find_phrase_by_index(instrument_id, 1)
+            local _, p2 = registry:find_phrase_by_index(instrument_id, 2)
+            local _, p3 = registry:find_phrase_by_index(instrument_id, 3)
+            local _, p4 = registry:find_phrase_by_index(instrument_id, 4)
 
-        -- Drums is now at position 4 (shifted from 3)
-        local shifted_drums_position = initial_drums_position + 1
-        local notification = { index1 = shifted_drums_position, index2 = desired_drums_position }
+            assert.are.equal(test_case.expected_phrase_order[1], p1.name)
+            assert.are.equal(test_case.expected_phrase_order[2], p2.name)
+            assert.are.equal(test_case.expected_phrase_order[3], p3.name)
+            assert.is_nil(p4)
 
-        main_module.swap(registry, notification, rust_backend_mock, IndexRegistry)
-        -- After swap: Drums(1), Piano(2), Guitar(3), nil(4)
+            assert.is_true(rust_backend_mock.set_new_phrase_indexes_called)
+            local instrument_data = registry:get_instrument_by_id(instrument_id)
+            assert.are.equal(instrument_data.current_index, rust_backend_mock.set_new_phrase_indexes_calls[1].instrument_index)
+        end)
+    end
+end)
 
-        -- Renoise removes where the nil ended up (position 4)
-        main_module.remove(registry, { index = shifted_drums_position }, rust_backend_mock, IndexRegistry)
+describe("Renaming Instruments", function()
+    local registry
+    local rust_backend_mock
+    local main
 
-        local _, i1 = IndexRegistry.find_instrument_by_index(registry, 1)
-        local _, i2 = IndexRegistry.find_instrument_by_index(registry, 2)
-        local _, i3 = IndexRegistry.find_instrument_by_index(registry, 3)
-        local _, i4 = IndexRegistry.find_instrument_by_index(registry, 4)
+    before_each(function()
+        registry = IndexRegistry.new()
+        registry:register_instrument(1, "Piano")
+        registry:register_instrument(2, "Guitar")
+        registry:register_instrument(3, "Drums")
 
-        assert.are.equal("Drums", i1.name)
-        assert.are.equal("Piano", i2.name)
-        assert.are.equal("Guitar", i3.name)
-        assert.is_nil(i4)
-
-        assert.are.equal(3, IndexRegistry.get_instrument_count(registry))
-        assert.is_true(rust_backend_mock.swap_instruments_called)
-        assert.is_true(rust_backend_mock.remove_instrument_called)
+        rust_backend_mock = TestHelpers.create_rust_backend_mock()
+        main = MainModule.new(rust_backend_mock, registry)
     end)
 
-    it("Swaps from the middle to the end", function()
-        -- Initial: Piano(1), Guitar(2), Drums(3)
-        -- Goal: Piano(1), Drums(2), Guitar(3)
-        local initial_guitar_position = 2
-        local desired_guitar_position = 4
+    it("Renames an instrument and updates the registry", function()
+        local instrument_id = 1  -- Piano
+        local new_name = "Grand Piano"
 
-        -- Renoise inserts at position 4
-        -- State becomes: Piano(1), Guitar(2), Drums(3), nil(4)
-        IndexRegistry.register_instrument(registry, desired_guitar_position, nil)
+        main:rename_instrument(instrument_id, new_name)
 
-        local notification = { index1 = initial_guitar_position, index2 = desired_guitar_position }
+        -- Get instrument data to verify index
+        local instrument_data = registry:get_instrument_by_id(instrument_id)
 
-        main_module.swap(registry, notification, rust_backend_mock, IndexRegistry)
-        -- After swap: Piano(1), nil(2), Drums(3), Guitar(4)
+        -- Verify rust backend was called with correct parameters
+        assert.is_true(rust_backend_mock.rename_instrument_called)
+        assert.are.equal(1, #rust_backend_mock.rename_instrument_calls)
+        assert.are.equal(instrument_data.current_index, rust_backend_mock.rename_instrument_calls[1].instrument_index)
+        assert.are.equal("Piano", rust_backend_mock.rename_instrument_calls[1].old_name)
+        assert.are.equal(new_name, rust_backend_mock.rename_instrument_calls[1].new_name)
 
-        -- Renoise removes where the nil ended up (position 2)
-        main_module.remove(registry, { index = initial_guitar_position }, rust_backend_mock, IndexRegistry)
+        -- Verify registry name was updated
+        assert.are.equal(new_name, instrument_data.name)
+    end)
+end)
 
-        local _, i1 = IndexRegistry.find_instrument_by_index(registry, 1)
-        local _, i2 = IndexRegistry.find_instrument_by_index(registry, 2)
-        local _, i3 = IndexRegistry.find_instrument_by_index(registry, 3)
-        local _, i4 = IndexRegistry.find_instrument_by_index(registry, 4)
+describe("Removing Phrases with Scripts", function()
+    local registry
+    local rust_backend_mock
+    local main
+    local instrument_id
 
-        assert.are.equal("Piano", i1.name)
-        assert.are.equal("Drums", i2.name)
-        assert.are.equal("Guitar", i3.name)
-        assert.is_nil(i4)
+    before_each(function()
+        registry = IndexRegistry.new()
+        instrument_id = registry:register_instrument(1, "Piano")
 
-        assert.are.equal(3, IndexRegistry.get_instrument_count(registry))
-        assert.is_true(rust_backend_mock.swap_instruments_called)
-        assert.is_true(rust_backend_mock.remove_instrument_called)
+        registry:register_phrase(instrument_id, 1, "Intro")
+        registry:register_phrase(instrument_id, 2, "Verse")
+        registry:register_phrase(instrument_id, 3, "Chorus")
+
+        rust_backend_mock = TestHelpers.create_rust_backend_mock()
+        main = MainModule.new(rust_backend_mock, registry)
     end)
 
-    it("Swaps from the middle to the beginning", function()
-        -- Initial: Piano(1), Guitar(2), Drums(3)
-        -- Goal: Guitar(1), Piano(2), Drums(3)
-        local initial_guitar_position = 2
-        local desired_guitar_position = 1
+    it("calls unregister_script with correct instrument_index and phrase_index when phrase has a script", function()
+        -- Mark phrase at index 2 as having a script registered
+        local _, phrase_data = registry:find_phrase_by_index(instrument_id, 2)
+        phrase_data.is_script_registered = true
 
-        -- Renoise inserts at position 1, shifting everything right
-        -- State becomes: nil(1), Piano(2), Guitar(3), Drums(4)
-        IndexRegistry.register_instrument(registry, desired_guitar_position, nil)
+        -- Get the instrument data to verify indexes
+        local instrument_data = registry:get_instrument_by_id(instrument_id)
+        local expected_instrument_index = instrument_data.current_index
+        local expected_phrase_index = phrase_data.current_index
 
-        -- Guitar is now at position 3 (shifted from 2)
-        local shifted_guitar_position = initial_guitar_position + 1
-        local notification = { index1 = shifted_guitar_position, index2 = desired_guitar_position }
+        -- Remove the phrase
+        main:remove_phrase(instrument_id, { index = 2 })
 
-        main_module.swap(registry, notification, rust_backend_mock, IndexRegistry)
-        -- After swap: Guitar(1), Piano(2), nil(3), Drums(4)
+        -- Verify unregister_script was called
+        assert.is_true(rust_backend_mock.unregister_script_called)
+        assert.are.equal(1, #rust_backend_mock.unregister_script_calls)
 
-        -- Renoise removes where the nil ended up (position 3)
-        main_module.remove(registry, { index = shifted_guitar_position }, rust_backend_mock, IndexRegistry)
-
-        local _, i1 = IndexRegistry.find_instrument_by_index(registry, 1)
-        local _, i2 = IndexRegistry.find_instrument_by_index(registry, 2)
-        local _, i3 = IndexRegistry.find_instrument_by_index(registry, 3)
-        local _, i4 = IndexRegistry.find_instrument_by_index(registry, 4)
-
-        assert.are.equal("Guitar", i1.name)
-        assert.are.equal("Piano", i2.name)
-        assert.are.equal("Drums", i3.name)
-        assert.is_nil(i4)
-
-        assert.are.equal(3, IndexRegistry.get_instrument_count(registry))
-        assert.is_true(rust_backend_mock.swap_instruments_called)
-        assert.is_true(rust_backend_mock.remove_instrument_called)
+        -- Verify correct indexes were passed
+        local call = rust_backend_mock.unregister_script_calls[1]
+        assert.are.equal(expected_instrument_index, call.instrument_index)
+        assert.are.equal(expected_phrase_index, call.phrase_index)
     end)
 
-    it("Swaps from the end to the middle", function()
-        -- Initial: Piano(1), Guitar(2), Drums(3)
-        -- Goal: Piano(1), Drums(2), Guitar(3)
-        local initial_drums_position = 3
-        local desired_drums_position = 2
+    it("does not call unregister_script when phrase has no script registered", function()
+        -- Remove phrase without script (is_script_registered is nil/false by default)
+        main:remove_phrase(instrument_id, { index = 2 })
 
-        -- Renoise inserts at position 2, shifting positions 2+ to the right
-        -- State becomes: Piano(1), nil(2), Guitar(3), Drums(4)
-        IndexRegistry.register_instrument(registry, desired_drums_position, nil)
-
-        -- Drums is now at position 4 (shifted from 3)
-        local shifted_drums_position = initial_drums_position + 1
-        local notification = { index1 = shifted_drums_position, index2 = desired_drums_position }
-
-        main_module.swap(registry, notification, rust_backend_mock, IndexRegistry)
-        -- After swap: Piano(1), Drums(2), Guitar(3), nil(4)
-
-        -- Renoise removes where the nil ended up (position 4)
-        main_module.remove(registry, { index = shifted_drums_position }, rust_backend_mock, IndexRegistry)
-
-        local _, i1 = IndexRegistry.find_instrument_by_index(registry, 1)
-        local _, i2 = IndexRegistry.find_instrument_by_index(registry, 2)
-        local _, i3 = IndexRegistry.find_instrument_by_index(registry, 3)
-        local _, i4 = IndexRegistry.find_instrument_by_index(registry, 4)
-
-        assert.are.equal("Piano", i1.name)
-        assert.are.equal("Drums", i2.name)
-        assert.are.equal("Guitar", i3.name)
-        assert.is_nil(i4)
-
-        assert.are.equal(3, IndexRegistry.get_instrument_count(registry))
-        assert.is_true(rust_backend_mock.swap_instruments_called)
-        assert.is_true(rust_backend_mock.remove_instrument_called)
+        -- Verify unregister_script was NOT called
+        assert.is_false(rust_backend_mock.unregister_script_called)
+        assert.are.equal(0, #rust_backend_mock.unregister_script_calls)
     end)
 
-    it("Swaps from the beginning to the middle", function()
-        -- Initial: Piano(1), Guitar(2), Drums(3)
-        -- Goal: Guitar(1), Piano(2), Drums(3)
-        local initial_piano_position = 1
-        -- To move Piano to final position 2, we need to insert at position 3
-        -- because after removal of nil at position 1, position 3 becomes position 2
-        local desired_piano_position = 3
+    it("removes phrase from registry regardless of script status", function()
+        -- Mark phrase as having a script
+        local phrase_id, phrase_data = registry:find_phrase_by_index(instrument_id, 2)
+        phrase_data.is_script_registered = true
 
-        -- Renoise inserts at position 3
-        -- State becomes: Piano(1), Guitar(2), nil(3), Drums(4)
-        IndexRegistry.register_instrument(registry, desired_piano_position, nil)
+        -- Remove the phrase
+        main:remove_phrase(instrument_id, { index = 2 })
 
-        local notification = { index1 = initial_piano_position, index2 = desired_piano_position }
+        -- Verify phrase was removed from registry
+        local removed_id, _ = registry:find_phrase_by_index(instrument_id, 2)
+        assert.are.not_equal(phrase_id, removed_id)
+    end)
+end)
 
-        main_module.swap(registry, notification, rust_backend_mock, IndexRegistry)
-        -- After swap: nil(1), Guitar(2), Piano(3), Drums(4)
+describe("Registering Scripts", function()
+    local registry
+    local rust_backend_mock
+    local main
+    local instrument_id
 
-        -- Renoise removes where the nil ended up (position 1)
-        main_module.remove(registry, { index = initial_piano_position }, rust_backend_mock, IndexRegistry)
+    before_each(function()
+        registry = IndexRegistry.new()
+        instrument_id = registry:register_instrument(1, "Piano")
 
-        local _, i1 = IndexRegistry.find_instrument_by_index(registry, 1)
-        local _, i2 = IndexRegistry.find_instrument_by_index(registry, 2)
-        local _, i3 = IndexRegistry.find_instrument_by_index(registry, 3)
-        local _, i4 = IndexRegistry.find_instrument_by_index(registry, 4)
+        registry:register_phrase(instrument_id, 1, "Intro")
+        registry:register_phrase(instrument_id, 2, "Verse")
+        registry:register_phrase(instrument_id, 3, "Chorus")
 
-        assert.are.equal("Guitar", i1.name)
-        assert.are.equal("Piano", i2.name)
-        assert.are.equal("Drums", i3.name)
-        assert.is_nil(i4)
-
-        assert.are.equal(3, IndexRegistry.get_instrument_count(registry))
-        assert.is_true(rust_backend_mock.swap_instruments_called)
-        assert.is_true(rust_backend_mock.remove_instrument_called)
+        rust_backend_mock = TestHelpers.create_rust_backend_mock()
+        main = MainModule.new(rust_backend_mock, registry)
     end)
 
-    it("Swaps adjacent instruments forward (position 1 to 2)", function()
-        -- Initial: Piano(1), Guitar(2), Drums(3)
-        -- Goal: Guitar(1), Piano(2), Drums(3)
-        local initial_piano_position = 1
-        -- To swap with adjacent (move Piano after Guitar), insert at position 3
-        local desired_piano_position = 3
+    it("calls register_script with correct parameters and marks phrase as registered", function()
+        local phrase_id = 2
+        local script_text = "-- This is a test script\nprint('Hello')"
 
-        -- Renoise inserts at position 3
-        -- State becomes: Piano(1), Guitar(2), nil(3), Drums(4)
-        IndexRegistry.register_instrument(registry, desired_piano_position, nil)
+        -- Get data before calling register_script
+        local instrument_data = registry:get_instrument_by_id(instrument_id)
+        local phrase_data = registry:get_phrase_by_id(instrument_id, phrase_id)
 
-        local notification = { index1 = initial_piano_position, index2 = desired_piano_position }
+        -- Call register_script
+        main:register_script(instrument_id, phrase_id, script_text)
 
-        main_module.swap(registry, notification, rust_backend_mock, IndexRegistry)
-        -- After swap: nil(1), Guitar(2), Piano(3), Drums(4)
+        -- Verify register_script was called
+        assert.is_true(rust_backend_mock.register_script_called)
+        assert.are.equal(1, #rust_backend_mock.register_script_calls)
 
-        -- Renoise removes position 1
-        main_module.remove(registry, { index = initial_piano_position }, rust_backend_mock, IndexRegistry)
+        -- Verify correct parameters were passed
+        local call = rust_backend_mock.register_script_calls[1]
+        assert.are.equal(instrument_data.current_index, call.instrument_index)
+        assert.are.equal(instrument_data.name, call.instrument_name)
+        assert.are.equal(phrase_data.current_index, call.phrase_index)
+        assert.are.equal(phrase_data.name, call.phrase_name)
+        assert.are.equal(script_text, call.script_body)
 
-        local _, i1 = IndexRegistry.find_instrument_by_index(registry, 1)
-        local _, i2 = IndexRegistry.find_instrument_by_index(registry, 2)
-        local _, i3 = IndexRegistry.find_instrument_by_index(registry, 3)
+        -- Verify is_script_registered was set to true
+        assert.is_true(phrase_data.is_script_registered)
+    end)
+end)
 
-        assert.are.equal("Guitar", i1.name)
-        assert.are.equal("Piano", i2.name)
-        assert.are.equal("Drums", i3.name)
+describe("Unregistering Scripts", function()
+    local registry
+    local rust_backend_mock
+    local main
+    local instrument_id
 
-        assert.are.equal(3, IndexRegistry.get_instrument_count(registry))
-        assert.is_true(rust_backend_mock.swap_instruments_called)
-        assert.is_true(rust_backend_mock.remove_instrument_called)
+    before_each(function()
+        registry = IndexRegistry.new()
+        instrument_id = registry:register_instrument(1, "Piano")
+
+        registry:register_phrase(instrument_id, 1, "Intro")
+        registry:register_phrase(instrument_id, 2, "Verse")
+        registry:register_phrase(instrument_id, 3, "Chorus")
+
+        rust_backend_mock = TestHelpers.create_rust_backend_mock()
+        main = MainModule.new(rust_backend_mock, registry)
     end)
 
-    it("Swaps adjacent instruments backward (position 2 to 1)", function()
-        -- Initial: Piano(1), Guitar(2), Drums(3)
-        -- Goal: Guitar(1), Piano(2), Drums(3)
-        local initial_guitar_position = 2
-        local desired_guitar_position = 1
+    it("calls unregister_script with correct parameters and marks phrase as unregistered", function()
+        local phrase_id = 2
 
-        -- Renoise inserts at position 1
-        -- State becomes: nil(1), Piano(2), Guitar(3), Drums(4)
-        IndexRegistry.register_instrument(registry, desired_guitar_position, nil)
+        -- First register a script
+        registry:get_phrase_by_id(instrument_id, phrase_id).is_script_registered = true
 
-        -- Guitar shifted from 2 to 3
-        local shifted_guitar_position = initial_guitar_position + 1
-        local notification = { index1 = shifted_guitar_position, index2 = desired_guitar_position }
+        -- Get data before calling unregister_script
+        local instrument_data = registry:get_instrument_by_id(instrument_id)
+        local phrase_data = registry:get_phrase_by_id(instrument_id, phrase_id)
 
-        main_module.swap(registry, notification, rust_backend_mock, IndexRegistry)
-        -- After swap: Guitar(1), Piano(2), nil(3), Drums(4)
+        -- Verify script is registered before unregistering
+        assert.is_true(phrase_data.is_script_registered)
 
-        -- Renoise removes position 3 (where nil ended up)
-        main_module.remove(registry, { index = shifted_guitar_position }, rust_backend_mock, IndexRegistry)
+        -- Call unregister_script
+        main:unregister_script(instrument_id, phrase_id)
 
-        local _, i1 = IndexRegistry.find_instrument_by_index(registry, 1)
-        local _, i2 = IndexRegistry.find_instrument_by_index(registry, 2)
-        local _, i3 = IndexRegistry.find_instrument_by_index(registry, 3)
+        -- Verify unregister_script was called
+        assert.is_true(rust_backend_mock.unregister_script_called)
+        assert.are.equal(1, #rust_backend_mock.unregister_script_calls)
 
-        assert.are.equal("Guitar", i1.name)
-        assert.are.equal("Piano", i2.name)
-        assert.are.equal("Drums", i3.name)
+        -- Verify correct parameters were passed
+        local call = rust_backend_mock.unregister_script_calls[1]
+        assert.are.equal(instrument_data.current_index, call.instrument_index)
+        assert.are.equal(phrase_data.current_index, call.phrase_index)
 
-        assert.are.equal(3, IndexRegistry.get_instrument_count(registry))
-        assert.is_true(rust_backend_mock.swap_instruments_called)
-        assert.is_true(rust_backend_mock.remove_instrument_called)
+        -- Verify is_script_registered was set to false
+        assert.is_false(phrase_data.is_script_registered)
+    end)
+end)
+
+describe("Renaming Phrases", function()
+    local registry
+    local rust_backend_mock
+    local main
+    local instrument_id
+
+    before_each(function()
+        registry = IndexRegistry.new()
+        instrument_id = registry:register_instrument(1, "Piano")
+
+        registry:register_phrase(instrument_id, 1, "Intro")
+        registry:register_phrase(instrument_id, 2, "Verse")
+        registry:register_phrase(instrument_id, 3, "Chorus")
+
+        rust_backend_mock = TestHelpers.create_rust_backend_mock()
+        main = MainModule.new(rust_backend_mock, registry)
+    end)
+
+    it("calls rename_script when phrase is in script playback mode", function()
+        local phrase_id = 2
+        local new_name = "Verse Extended"
+
+        local instrument_data = registry:get_instrument_by_id(instrument_id)
+        local phrase_data = registry:get_phrase_by_id(instrument_id, phrase_id)
+        local old_name = phrase_data.name
+
+        -- Call rename_phrase with is_playing_script = true
+        main:rename_phrase(instrument_id, phrase_id, new_name, true)
+
+        -- Verify rename_script was called
+        assert.is_true(rust_backend_mock.rename_script_called)
+        assert.are.equal(1, #rust_backend_mock.rename_script_calls)
+
+        -- Verify correct parameters were passed
+        local call = rust_backend_mock.rename_script_calls[1]
+        assert.are.equal(instrument_data.current_index, call.instrument_index)
+        assert.are.equal(phrase_data.current_index, call.phrase_index)
+        assert.are.equal(old_name, call.old_name)
+        assert.are.equal(new_name, call.new_name)
+
+        -- Verify phrase name was updated in registry
+        assert.are.equal(new_name, phrase_data.name)
+    end)
+
+    it("does not call rename_script when phrase is not in script playback mode", function()
+        local phrase_id = 2
+        local new_name = "Verse Extended"
+
+        local phrase_data = registry:get_phrase_by_id(instrument_id, phrase_id)
+        local old_name = phrase_data.name
+
+        -- Call rename_phrase with is_playing_script = false
+        main:rename_phrase(instrument_id, phrase_id, new_name, false)
+
+        -- Verify rename_script was NOT called
+        assert.is_false(rust_backend_mock.rename_script_called)
+        assert.are.equal(0, #rust_backend_mock.rename_script_calls)
+
+        -- Verify phrase name was still updated in registry
+        assert.are.equal(new_name, phrase_data.name)
     end)
 end)
