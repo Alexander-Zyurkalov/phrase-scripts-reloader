@@ -3,13 +3,28 @@
 --- @field create_renoise_mock fun(file_name?: string): nil
 
 --- @class RustBackendMock
---- @field swap_instruments fun(file_name: string, i1: number, i2: number)
---- @field remove_instrument fun(file_name: string, index: number)
---- @field swap_instruments_called boolean
+--- @field set_new_instrument_indexes fun(self: RustBackendMock, instrument_indexes: number[])
+--- @field set_new_phrase_indexes fun(self: RustBackendMock, instrument_index: number, phrase_indexes: number[])
+--- @field remove_instrument fun(self: RustBackendMock, index: number)
+--- @field unregister_script fun(self: RustBackendMock, instrument_index: number, phrase_index: number)
+--- @field register_script fun(self: RustBackendMock, instrument_index: number, instrument_name: string, phrase_index: number, phrase_name: string, script_body: string)
+--- @field rename_script fun(self: RustBackendMock, instrument_index: number, phrase_index: number, old_name: string, new_name: string)
+--- @field rename_instrument fun(self: RustBackendMock, instrument_index: number, old_name: string, new_name: string)
+--- @field set_new_instrument_indexes_called boolean
+--- @field set_new_phrase_indexes_called boolean
 --- @field remove_instrument_called boolean
---- @field swap_instruments_calls table[]
+--- @field unregister_script_called boolean
+--- @field register_script_called boolean
+--- @field rename_script_called boolean
+--- @field rename_instrument_called boolean
+--- @field set_new_instrument_indexes_calls table[]
+--- @field set_new_phrase_indexes_calls table[]
 --- @field remove_instrument_calls table[]
---- @field reset fun()
+--- @field unregister_script_calls table[]
+--- @field register_script_calls table[]
+--- @field rename_script_calls table[]
+--- @field rename_instrument_calls table[]
+--- @field reset fun(self: RustBackendMock)
 
 local M = {}
 
@@ -17,50 +32,101 @@ local M = {}
 --- @return RustBackendMock
 function M.create_rust_backend_mock()
     local mock = {
-        swap_instruments_called = false,
+        set_new_instrument_indexes_called = false,
+        set_new_phrase_indexes_called = false,
         remove_instrument_called = false,
-        swap_instruments_calls = {},
+        unregister_script_called = false,
+        register_script_called = false,
+        rename_script_called = false,
+        rename_instrument_called = false,
+        set_new_instrument_indexes_calls = {},
+        set_new_phrase_indexes_calls = {},
         remove_instrument_calls = {},
+        unregister_script_calls = {},
+        register_script_calls = {},
+        rename_script_calls = {},
+        rename_instrument_calls = {},
     }
 
-    mock.swap_instruments = function(file_name, i1, i2)
-        mock.swap_instruments_called = true
-        table.insert(mock.swap_instruments_calls, {
-            file_name = file_name,
-            i1 = i1,
-            i2 = i2
+    function mock:set_new_instrument_indexes(instrument_indexes)
+        self.set_new_instrument_indexes_called = true
+        table.insert(self.set_new_instrument_indexes_calls, {
+            instrument_indexes = instrument_indexes
         })
     end
 
-    mock.remove_instrument = function(file_name, index)
-        mock.remove_instrument_called = true
-        table.insert(mock.remove_instrument_calls, {
-            file_name = file_name,
+    function mock:set_new_phrase_indexes(instrument_index, phrase_indexes)
+        self.set_new_phrase_indexes_called = true
+        table.insert(self.set_new_phrase_indexes_calls, {
+            instrument_index = instrument_index,
+            phrase_indexes = phrase_indexes
+        })
+    end
+
+    function mock:remove_instrument(index)
+        self.remove_instrument_called = true
+        table.insert(self.remove_instrument_calls, {
             index = index
         })
     end
 
-    mock.reset = function()
-        mock.swap_instruments_called = false
-        mock.remove_instrument_called = false
-        mock.swap_instruments_calls = {}
-        mock.remove_instrument_calls = {}
+    function mock:unregister_script(instrument_index, phrase_index)
+        self.unregister_script_called = true
+        table.insert(self.unregister_script_calls, {
+            instrument_index = instrument_index,
+            phrase_index = phrase_index
+        })
+    end
+
+    function mock:rename_instrument(instrument_index, old_name, new_name)
+        self.rename_instrument_called = true
+        table.insert(self.rename_instrument_calls, {
+            instrument_index = instrument_index,
+            old_name = old_name,
+            new_name = new_name
+        })
+    end
+
+    function mock:register_script(instrument_index, instrument_name, phrase_index, phrase_name, script_body)
+        self.register_script_called = true
+        table.insert(self.register_script_calls, {
+            instrument_index = instrument_index,
+            instrument_name = instrument_name,
+            phrase_index = phrase_index,
+            phrase_name = phrase_name,
+            script_body = script_body
+        })
+    end
+
+    function mock:rename_script(instrument_index, phrase_index, old_name, new_name)
+        self.rename_script_called = true
+        table.insert(self.rename_script_calls, {
+            instrument_index = instrument_index,
+            phrase_index = phrase_index,
+            old_name = old_name,
+            new_name = new_name
+        })
+    end
+
+    function mock:reset()
+        self.set_new_instrument_indexes_called = false
+        self.set_new_phrase_indexes_called = false
+        self.remove_instrument_called = false
+        self.unregister_script_called = false
+        self.register_script_called = false
+        self.rename_script_called = false
+        self.rename_instrument_called = false
+        self.set_new_instrument_indexes_calls = {}
+        self.set_new_phrase_indexes_calls = {}
+        self.remove_instrument_calls = {}
+        self.unregister_script_calls = {}
+        self.register_script_calls = {}
+        self.rename_script_calls = {}
+        self.rename_instrument_calls = {}
     end
 
     return mock
 end
 
---- Sets up the global renoise mock
---- @param file_name? string The file name to return (defaults to "test_song.xrns")
-function M.setup_renoise_mock(file_name)
-    file_name = file_name or "test_song.xrns"
-    _G.renoise = {
-        song = function()
-            return {
-                file_name = file_name
-            }
-        end
-    }
-end
 
 return M

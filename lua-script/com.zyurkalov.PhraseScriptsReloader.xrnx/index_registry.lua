@@ -12,46 +12,76 @@
 --- @field phrase_map table<number, table<number, PhraseData>> Hash map to track phrases by unique ID, grouped by instrument ID
 --- @field next_instrument_id number Counter for generating unique instrument IDs
 --- @field next_phrase_id table<number, number> Counters for generating unique phrase IDs per instrument
---- @field recently_swapped_instruments table<number, boolean> Workaround for Renoise bug: indexes involved in recent swap
+--- @field recently_swapped_instruments table
+--- @field new fun(): IndexRegistry
+--- @field print_instrument_map fun(self: IndexRegistry)
+--- @field get_instrument_count fun(self: IndexRegistry): number
+--- @field swap_instrument_indexes fun(self: IndexRegistry, index1: number, index2: number)
+--- @field swap_phrase_indexes fun(self: IndexRegistry, instrument_id: number, index1: number, index2: number)
+--- @field register_instrument fun(self: IndexRegistry, instrument_index: number, instrument_name: string): number
+--- @field remove_instrument fun(self: IndexRegistry, instrument_id: number)
+--- @field register_phrase fun(self: IndexRegistry, instrument_id: number, phrase_index: number, phrase_name: string): number
+--- @field remove_phrase fun(self: IndexRegistry, instrument_id: number, phrase_id: number)
+--- @field get_instrument_by_id fun(self: IndexRegistry, instrument_id: number): InstrumentData|nil
+--- @field get_phrase_by_id fun(self: IndexRegistry, instrument_id: number, phrase_id: number): PhraseData|nil
+--- @field find_instrument_by_index fun(self: IndexRegistry, current_index: number): number|nil, InstrumentData|nil
+--- @field find_phrase_by_index fun(self: IndexRegistry, instrument_id: number, current_index: number): number|nil, PhraseData|nil
 
-local M = {}
+local IndexRegistry = {}
+IndexRegistry.__index = IndexRegistry
 
---- Creates a new state instance
+--- Creates a new IndexRegistry instance
 --- @return IndexRegistry
-function M.new()
-    return {
-        instrument_map = {},
-        phrase_map = {},
-        next_instrument_id = 1,
-        next_phrase_id = {},
-        recently_swapped_instruments = {}
-    }
+function IndexRegistry.new()
+    local self = setmetatable({}, IndexRegistry)
+    self.instrument_map = {}
+    self.phrase_map = {}
+    self.next_instrument_id = 1
+    self.next_phrase_id = {}
+    self.recently_swapped_instruments = {}
+    return self
 end
 
 --- Prints the instrument_map structure for debugging
---- @param registry IndexRegistry The shared state
-function M.print_instrument_map(registry)
+function IndexRegistry:print_instrument_map()
     -- Sort by current_index for consistent output
     local sorted_ids = {}
-    for id in pairs(registry.instrument_map) do
+    for id in pairs(self.instrument_map) do
         table.insert(sorted_ids, id)
     end
     table.sort(sorted_ids, function(a, b)
-        return registry.instrument_map[a].current_index < registry.instrument_map[b].current_index
+        return self.instrument_map[a].current_index < self.instrument_map[b].current_index
     end)
 
     for _, id in ipairs(sorted_ids) do
-        local data = registry.instrument_map[id]
+        local data = self.instrument_map[id]
     end
 end
 
 --- Returns the number of registered instruments
---- @param registry IndexRegistry The shared state
 --- @return number count The number of registered instruments
-function M.get_instrument_count(registry)
+function IndexRegistry:get_instrument_count()
     local seen = {}
     local count = 0
-    for _, v in pairs(registry.instrument_map) do
+    for _, v in pairs(self.instrument_map) do
+        if not seen[v.current_index] then
+            seen[v.current_index] = true
+            count = count + 1
+        end
+    end
+    return count
+end
+
+--- Returns the number of registered phrases for a given instrument
+--- @param instrument_id number The unique instrument ID
+--- @return number count The number of registered phrases
+function IndexRegistry:get_phrase_count(instrument_id)
+    local seen = {}
+    local count = 0
+    if self.phrase_map[instrument_id] == nil then
+        return 0
+    end
+    for _, v in pairs(self.phrase_map[instrument_id]) do
         if not seen[v.current_index] then
             seen[v.current_index] = true
             count = count + 1
@@ -61,29 +91,28 @@ function M.get_instrument_count(registry)
 end
 
 --- Updates all instrument indexes after an insertion or removal
---- @param registry IndexRegistry The shared state
 --- @param from_index number The index from which to start updating
 --- @param delta number The change in index (+1 for insert, -1 for remove)
-local function update_instrument_indexes(registry, from_index, delta)
-    for _, data in pairs(registry.instrument_map) do
+function IndexRegistry:_update_instrument_indexes(from_index, delta)
+    for _, data in pairs(self.instrument_map) do
         if data.current_index >= from_index then
             data.current_index = data.current_index + delta
         end
     end
 end
+
 --- Updates all phrase indexes for a given instrument after an insertion or removal
---- @param registry IndexRegistry The shared state
 --- @param instrument_id number The unique instrument ID
 --- @param from_index number The phrase index from which to start updating
 --- @param delta number The change in index (+1 for insert, -1 for remove)
-local function update_phrase_indexes(registry, instrument_id, from_index, delta)
-    if (not registry.phrase_map) then
+function IndexRegistry:_update_phrase_indexes(instrument_id, from_index, delta)
+    if not self.phrase_map then
         return
     end
-    if not registry.phrase_map[instrument_id] then
+    if not self.phrase_map[instrument_id] then
         return
     end
-    for _, data in pairs(registry.phrase_map[instrument_id]) do
+    for _, data in pairs(self.phrase_map[instrument_id]) do
         if data.current_index >= from_index then
             data.current_index = data.current_index + delta
         end
@@ -109,73 +138,73 @@ local function swap_indexes_in_map(map, index1, index2)
 end
 
 --- Swaps the current_index values of two instruments
---- @param registry IndexRegistry The shared state
 --- @param index1 number
 --- @param index2 number
-function M.swap_instrument_indexes(registry, index1, index2)
-    swap_indexes_in_map(registry.instrument_map, index1, index2)
+function IndexRegistry:swap_instrument_indexes(index1, index2)
+    swap_indexes_in_map(self.instrument_map, index1, index2)
 end
 
 --- Swaps the current_index values of two phrases within an instrument
---- @param registry IndexRegistry The shared state
 --- @param instrument_id number The unique instrument ID
 --- @param index1 number
 --- @param index2 number
-function M.swap_phrase_indexes(registry, instrument_id, index1, index2)
-    if registry.phrase_map[instrument_id] then
-        swap_indexes_in_map(registry.phrase_map[instrument_id], index1, index2)
+function IndexRegistry:swap_phrase_indexes(instrument_id, index1, index2)
+    if self.phrase_map[instrument_id] then
+        swap_indexes_in_map(self.phrase_map[instrument_id], index1, index2)
     end
 end
 
---- Registers a new instrument in the state
---- @param registry IndexRegistry The shared state
+--- Registers a new instrument
 --- @param instrument_index number The current index of the instrument
 --- @param instrument_name string The name of the instrument
 --- @return number instrument_id The unique ID assigned to the instrument
-function M.register_instrument(registry, instrument_index, instrument_name)
-    local instrument_id = registry.next_instrument_id
-    registry.next_instrument_id = registry.next_instrument_id + 1
-    if instrument_index <= M.get_instrument_count(registry) then
-        update_instrument_indexes(registry, instrument_index, 1)
+function IndexRegistry:register_instrument(instrument_index, instrument_name)
+    local instrument_id = self.next_instrument_id
+    self.next_instrument_id = self.next_instrument_id + 1
+    if instrument_index <= self:get_instrument_count() then
+        self:_update_instrument_indexes(instrument_index, 1)
     end
 
-    registry.instrument_map[instrument_id] = {
+    self.instrument_map[instrument_id] = {
         current_index = instrument_index,
         name = instrument_name or ""
     }
 
-    registry.phrase_map[instrument_id] = {}
-    registry.next_phrase_id[instrument_id] = 1
+    self.phrase_map[instrument_id] = {}
+    self.next_phrase_id[instrument_id] = 1
 
     return instrument_id
 end
 
---- Removes an instrument from the state
---- @param registry IndexRegistry The shared state
+--- Removes an instrument
 --- @param instrument_id number The unique instrument ID
-function M.remove_instrument(registry, instrument_id)
-    local instrument_data = registry.instrument_map[instrument_id]
+function IndexRegistry:remove_instrument(instrument_id)
+    local instrument_data = self.instrument_map[instrument_id]
     local instrument_index = instrument_data and instrument_data.current_index
-    registry.instrument_map[instrument_id] = nil
-    registry.phrase_map[instrument_id] = nil
-    registry.next_phrase_id[instrument_id] = nil
-    if instrument_index and instrument_index <= M.get_instrument_count(registry) then
-        update_instrument_indexes(registry, instrument_index, -1)
+    self.instrument_map[instrument_id] = nil
+    self.phrase_map[instrument_id] = nil
+    self.next_phrase_id[instrument_id] = nil
+    if instrument_index and instrument_index <= self:get_instrument_count() then
+        self:_update_instrument_indexes(instrument_index, -1)
     end
 end
 
---- Registers a new phrase in the state
---- @param registry IndexRegistry The shared state
+--- Registers a new phrase
 --- @param instrument_id number The unique instrument ID
 --- @param phrase_index number The current index of the phrase
 --- @param phrase_name string The name of the phrase
 --- @return number phrase_id The unique ID assigned to the phrase
-function M.register_phrase(registry, instrument_id, phrase_index, phrase_name)
-    update_phrase_indexes(registry, instrument_id, phrase_index, 1)
-    local phrase_id = registry.next_phrase_id[instrument_id]
-    registry.next_phrase_id[instrument_id] = registry.next_phrase_id[instrument_id] + 1
+function IndexRegistry:register_phrase(instrument_id, phrase_index, phrase_name)
+    local phrase_id = self.next_phrase_id[instrument_id]
+    if phrase_id == nil then
+        return nil
+    end
+    self.next_phrase_id[instrument_id] = self.next_phrase_id[instrument_id] + 1
+    if phrase_index <= self:get_phrase_count(instrument_id) then
+        self:_update_phrase_indexes(instrument_id, phrase_index, 1)
+    end
 
-    registry.phrase_map[instrument_id][phrase_id] = {
+    self.phrase_map[instrument_id][phrase_id] = {
         current_index = phrase_index,
         name = phrase_name,
         is_script_registered = false
@@ -184,43 +213,43 @@ function M.register_phrase(registry, instrument_id, phrase_index, phrase_name)
     return phrase_id
 end
 
---- Removes a phrase from the state
---- @param registry IndexRegistry The shared state
+--- Removes a phrase
 --- @param instrument_id number The unique instrument ID
 --- @param phrase_id number The unique phrase ID
-function M.remove_phrase(registry, instrument_id, phrase_id)
-    if registry.phrase_map[instrument_id] then
-        registry.phrase_map[instrument_id][phrase_id] = nil
-        update_phrase_indexes(registry, instrument_id, phrase_id, -1)
+function IndexRegistry:remove_phrase(instrument_id, phrase_id)
+    if self.phrase_map[instrument_id] then
+        local phrase_data = self.phrase_map[instrument_id]
+        local phrase_index = phrase_data[phrase_id] and phrase_data[phrase_id].current_index
+        self.phrase_map[instrument_id][phrase_id] = nil
+        if phrase_index and phrase_index <= self:get_phrase_count(instrument_id) then
+            self:_update_phrase_indexes(instrument_id, phrase_index, -1)
+        end
     end
 end
 
 --- Gets instrument data by its unique ID
---- @param registry IndexRegistry The shared state
 --- @param instrument_id number The unique instrument ID
 --- @return InstrumentData|nil
-function M.get_instrument_by_id(registry, instrument_id)
-    return registry.instrument_map[instrument_id]
+function IndexRegistry:get_instrument_by_id(instrument_id)
+    return self.instrument_map[instrument_id]
 end
 
 --- Gets phrase data by its unique ID
---- @param registry IndexRegistry The shared state
 --- @param instrument_id number The unique instrument ID
 --- @param phrase_id number The unique phrase ID
 --- @return PhraseData|nil
-function M.get_phrase_by_id(registry, instrument_id, phrase_id)
-    if registry.phrase_map[instrument_id] then
-        return registry.phrase_map[instrument_id][phrase_id]
+function IndexRegistry:get_phrase_by_id(instrument_id, phrase_id)
+    if self.phrase_map[instrument_id] then
+        return self.phrase_map[instrument_id][phrase_id]
     end
     return nil
 end
 
 --- Finds instrument ID and data by current index
---- @param registry IndexRegistry The shared state
 --- @param current_index number The current index to search for
 --- @return number|nil instrument_id, InstrumentData|nil data
-function M.find_instrument_by_index(registry, current_index)
-    for id, data in pairs(registry.instrument_map) do
+function IndexRegistry:find_instrument_by_index(current_index)
+    for id, data in pairs(self.instrument_map) do
         if data.current_index == current_index then
             return id, data
         end
@@ -229,15 +258,14 @@ function M.find_instrument_by_index(registry, current_index)
 end
 
 --- Finds phrase ID and data by current index within an instrument
---- @param registry IndexRegistry The shared state
 --- @param instrument_id number The unique instrument ID
 --- @param current_index number The current index to search for
 --- @return number|nil phrase_id, PhraseData|nil data
-function M.find_phrase_by_index(registry, instrument_id, current_index)
-    if not registry.phrase_map[instrument_id] then
+function IndexRegistry:find_phrase_by_index(instrument_id, current_index)
+    if not self.phrase_map[instrument_id] then
         return nil, nil
     end
-    for id, data in pairs(registry.phrase_map[instrument_id]) do
+    for id, data in pairs(self.phrase_map[instrument_id]) do
         if data.current_index == current_index then
             return id, data
         end
@@ -245,16 +273,4 @@ function M.find_phrase_by_index(registry, instrument_id, current_index)
     return nil, nil
 end
 
---- Checks if an index was recently swapped and clears the tracking if so
---- @param registry IndexRegistry The shared state
---- @param index number The index to check
---- @return boolean was_recently_swapped
-function M.check_and_clear_recently_swapped(registry, index)
-    if registry.recently_swapped_instruments[index] then
-        registry.recently_swapped_instruments = {}
-        return true
-    end
-    return false
-end
-
-return M
+return IndexRegistry
