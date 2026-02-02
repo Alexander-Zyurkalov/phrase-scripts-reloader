@@ -10,7 +10,7 @@
 --- @field register_script fun(self: MainModule, instrument_id: number, phrase_id: number, script_text: string)
 --- @field unregister_script fun(self: MainModule, instrument_id: number, phrase_id: number)
 --- @field rename_phrase fun(self: MainModule, instrument_id: number, phrase_id: number, new_name: string, is_playing_script: boolean)
---- @field take_changes fun(self: MainModule): {path: string, instrument_index: number, phrase_index: number, phrase_name: string, script_body: string}[]
+--- @field take_changes fun(self: MainModule): {instrument_index: number, phrase_index: number, phrase_name: string, script_body: string}[], {message: string, path: string}[]
 
 local M = {}
 M.__index = M
@@ -30,7 +30,19 @@ function M:swap_instrument_indexes(notification)
     local index1 = notification.index1
     local index2 = notification.index2
     self.registry:swap_instrument_indexes(index1, index2)
-    self.rust_backend:set_new_instrument_indexes({ index1, index2 })
+
+    -- After swap, find the IDs now at each index and send id-index pairs
+    local id1, _ = self.registry:find_instrument_by_index(index1)
+    local id2, _ = self.registry:find_instrument_by_index(index2)
+
+    local pairs = {}
+    if id1 then
+        table.insert(pairs, { id1, index1 })
+    end
+    if id2 then
+        table.insert(pairs, { id2, index2 })
+    end
+    self.rust_backend:set_new_instrument_indexes(pairs)
 end
 
 --- @param instrument_id number
@@ -38,9 +50,20 @@ end
 function M:swap_phrases_indexes(instrument_id, notification)
     local index1 = notification.index1
     local index2 = notification.index2
-    local instrument_data = self.registry:get_instrument_by_id(instrument_id)
     self.registry:swap_phrase_indexes(instrument_id, index1, index2)
-    self.rust_backend:set_new_phrase_indexes(instrument_data.current_index, { index1, index2 })
+
+    -- After swap, find the IDs now at each index and send id-index pairs
+    local phrase_id1, _ = self.registry:find_phrase_by_index(instrument_id, index1)
+    local phrase_id2, _ = self.registry:find_phrase_by_index(instrument_id, index2)
+
+    local pairs = {}
+    if phrase_id1 then
+        table.insert(pairs, { phrase_id1, index1 })
+    end
+    if phrase_id2 then
+        table.insert(pairs, { phrase_id2, index2 })
+    end
+    self.rust_backend:set_new_phrase_indexes(instrument_id, pairs)
 end
 
 --- @param notification {type: string, index: number}
@@ -49,8 +72,8 @@ function M:remove_instrument(notification)
 
     local instrument_id, instrument_data = self.registry:find_instrument_by_index(removed_index)
     if instrument_data then
-        self.rust_backend:remove_instrument(instrument_data.current_index)
-        self.registry:remove_instrument(instrument_id)
+        self.rust_backend:unregister_instrument(instrument_id)
+        self.registry:unregister_instrument(instrument_id)
     end
 end
 
@@ -58,11 +81,10 @@ end
 --- @param notification {type: string, index: number}
 function M:remove_phrase(instrument_id, notification)
     local removed_index = notification.index
-    local instrument_data = self.registry:get_instrument_by_id(instrument_id)
     local phrase_id, phrase_data = self.registry:find_phrase_by_index(instrument_id, removed_index)
     if phrase_id and phrase_data then
         if phrase_data.is_script_registered then
-            self.rust_backend:unregister_script(instrument_data.current_index, phrase_data.current_index)
+            self.rust_backend:unregister_script(instrument_id, phrase_id)
         end
         self.registry:remove_phrase(instrument_id, phrase_id)
     end
@@ -74,8 +96,7 @@ end
 function M:rename_instrument(instrument_id, new_instrument_name)
     local instrument_data = self.registry:get_instrument_by_id(instrument_id)
     self.rust_backend:rename_instrument(
-            instrument_data.current_index,
-            instrument_data.name,
+            instrument_id,
             new_instrument_name
     )
     instrument_data.name = new_instrument_name
@@ -87,10 +108,15 @@ end
 function M:register_script(instrument_id, phrase_id, script_text)
     local instrument_data = self.registry:get_instrument_by_id(instrument_id)
     local phrase_data = self.registry:get_phrase_by_id(instrument_id, phrase_id)
+
+    -- Provide the ID-to-index mapping to the Rust backend
+    self.rust_backend:set_new_instrument_indexes({ { instrument_id, instrument_data.current_index } })
+    self.rust_backend:set_new_phrase_indexes(instrument_id, { { phrase_id, phrase_data.current_index } })
+
     self.rust_backend:register_script(
-            instrument_data.current_index,
+            instrument_id,
             instrument_data.name,
-            phrase_data.current_index,
+            phrase_id,
             phrase_data.name,
             script_text
     )
@@ -100,11 +126,10 @@ end
 --- @param instrument_id number
 --- @param phrase_id number
 function M:unregister_script(instrument_id, phrase_id)
-    local instrument_data = self.registry:get_instrument_by_id(instrument_id)
     local phrase_data = self.registry:get_phrase_by_id(instrument_id, phrase_id)
     self.rust_backend:unregister_script(
-            instrument_data.current_index,
-            phrase_data.current_index
+            instrument_id,
+            phrase_id
     )
     phrase_data.is_script_registered = false
 end
@@ -115,14 +140,12 @@ end
 --- @param new_name string
 --- @param is_playing_script boolean Whether the phrase is in PLAY_SCRIPT mode
 function M:rename_phrase(instrument_id, phrase_id, new_name, is_playing_script)
-    local instrument_data = self.registry:get_instrument_by_id(instrument_id)
     local phrase_data = self.registry:get_phrase_by_id(instrument_id, phrase_id)
 
     if is_playing_script then
         self.rust_backend:rename_script(
-                instrument_data.current_index,
-                phrase_data.current_index,
-                phrase_data.name,
+                instrument_id,
+                phrase_id,
                 new_name
         )
     end
@@ -130,10 +153,54 @@ function M:rename_phrase(instrument_id, phrase_id, new_name, is_playing_script)
     phrase_data.name = new_name
 end
 
---- Retrieves pending changes from the rust backend
---- @return {path: string, instrument_index: number, phrase_index: number, phrase_name: string, script_body: string}[]
+--- Retrieves pending changes from the rust backend, converting IDs to indexes
+--- Filters out changes where IDs no longer exist in the registry or names don't match
+--- @return {instrument_index: number, phrase_index: number, phrase_name: string, script_body: string}[] validated_changes
+--- @return {message: string, path: string}[] errors
 function M:take_changes()
-    return self.rust_backend:take_changes()
+    local raw_changes = self.rust_backend:take_changes()
+    local validated_changes = {}
+    local errors = {}
+
+    for _, change in ipairs(raw_changes) do
+        local instrument_data = self.registry:get_instrument_by_id(change.instrument_id)
+        if not instrument_data then
+            table.insert(errors, {
+                message = "instrument_id " .. change.instrument_id .. " not found in registry",
+                path = change.path
+            })
+        elseif instrument_data.name ~= change.instrument_name then
+            table.insert(errors, {
+                message = "instrument_name mismatch for instrument_id " .. change.instrument_id ..
+                        ": expected '" .. instrument_data.name .. "', got '" .. change.instrument_name .. "'",
+                path = change.path
+            })
+        else
+            local phrase_data = self.registry:get_phrase_by_id(change.instrument_id, change.phrase_id)
+            if not phrase_data then
+                table.insert(errors, {
+                    message = "phrase_id " .. change.phrase_id .. " not found for instrument_id " .. change.instrument_id,
+                    path = change.path
+                })
+            elseif phrase_data.name ~= change.phrase_name then
+                table.insert(errors, {
+                    message = "phrase_name mismatch for phrase_id " .. change.phrase_id ..
+                            " in instrument_id " .. change.instrument_id ..
+                            ": expected '" .. phrase_data.name .. "', got '" .. change.phrase_name .. "'",
+                    path = change.path
+                })
+            else
+                table.insert(validated_changes, {
+                    instrument_index = instrument_data.current_index,
+                    phrase_index = phrase_data.current_index,
+                    phrase_name = change.phrase_name,
+                    script_body = change.script_body
+                })
+            end
+        end
+    end
+
+    return validated_changes, errors
 end
 
 return M

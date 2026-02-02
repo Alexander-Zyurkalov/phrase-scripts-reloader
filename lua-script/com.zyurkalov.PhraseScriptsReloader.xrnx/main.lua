@@ -99,7 +99,7 @@ local function on_instruments_changed(registry, notification, rust_backend, main
     end
 end
 
---- @param change {path: string, instrument_index: number, phrase_index: number, phrase_name: string, script_body: string}
+--- @param change {instrument_index: number, phrase_index: number, phrase_name: string, script_body: string}
 local function apply_script_change(change)
     local instrument_index = change.instrument_index
     local phrase_index = change.phrase_index
@@ -130,9 +130,30 @@ local function apply_script_change(change)
     end
 end
 
+--- Shows validation errors in a warning dialog
+--- @param errors {message: string, path: string}[]
+local function show_validation_errors(errors)
+    local error_lines = {}
+    for _, error in ipairs(errors) do
+        table.insert(error_lines, "• " .. error.message)
+        table.insert(error_lines, "  Path: " .. error.path)
+        table.insert(error_lines, "")
+    end
+    local error_text = table.concat(error_lines, "\n")
+    renoise.app():show_warning(
+            "PhraseScriptsReloader: Some script changes were skipped due to validation errors:\n\n" ..
+                    error_text
+    )
+end
+
 --- @param main MainModule
 local function request_changes(main)
-    local changes = main:take_changes()
+    local changes, errors = main:take_changes()
+
+    if #errors > 0 then
+        show_validation_errors(errors)
+    end
+
     if #changes > 0 then
         renoise.app():show_status("PhraseScriptsReloader: reloading phrase scripts from files...")
     end
@@ -176,7 +197,7 @@ local function on_new_document()
     end
 
     saved_document_notifier = function()
-        rust_backend:update_path(renoise.song().file_name)
+        rust_backend:update_song_path(renoise.song().file_name)
     end
     renoise.tool().app_saved_document_observable:add_notifier(saved_document_notifier)
 end
