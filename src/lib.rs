@@ -1,7 +1,13 @@
-use std::fs;
-use std::time::SystemTime;
-use std::os::raw::{c_char, c_int};
+mod backend;
+mod file_changes_monitor;
+mod script_paths;
+mod indexes;
+mod instrument_registry;
+
 use std::ffi::CStr;
+use std::fs;
+use std::os::raw::{c_char, c_int};
+use std::time::SystemTime;
 
 #[repr(C)]
 pub struct lua_State {
