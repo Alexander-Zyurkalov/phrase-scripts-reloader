@@ -3,23 +3,25 @@
 --- @field create_renoise_mock fun(file_name?: string): nil
 
 --- @class RustBackendMock
---- @field set_new_instrument_indexes fun(self: RustBackendMock, instrument_indexes: number[])
---- @field set_new_phrase_indexes fun(self: RustBackendMock, instrument_index: number, phrase_indexes: number[])
---- @field remove_instrument fun(self: RustBackendMock, index: number)
---- @field unregister_script fun(self: RustBackendMock, instrument_index: number, phrase_index: number)
---- @field register_script fun(self: RustBackendMock, instrument_index: number, instrument_name: string, phrase_index: number, phrase_name: string, script_body: string)
---- @field rename_script fun(self: RustBackendMock, instrument_index: number, phrase_index: number, old_name: string, new_name: string)
---- @field rename_instrument fun(self: RustBackendMock, instrument_index: number, old_name: string, new_name: string)
+--- @field set_new_instrument_indexes fun(self: RustBackendMock, id_index_pairs: table[])
+--- @field set_new_phrase_indexes fun(self: RustBackendMock, instrument_id: number, id_index_pairs: table[])
+--- @field unregister_instrument fun(self: RustBackendMock, instrument_id: number)
+--- @field unregister_script fun(self: RustBackendMock, instrument_id: number, phrase_id: number)
+--- @field register_script fun(self: RustBackendMock, instrument_id: number, instrument_name: string, phrase_id: number, phrase_name: string, script_body: string)
+--- @field rename_script fun(self: RustBackendMock, instrument_id: number, phrase_id: number, new_name: string)
+--- @field rename_instrument fun(self: RustBackendMock, instrument_id: number, new_name: string)
+--- @field take_changes fun(self: RustBackendMock): table[]
+--- @field pending_changes table[] Changes to be returned by take_changes
 --- @field set_new_instrument_indexes_called boolean
 --- @field set_new_phrase_indexes_called boolean
---- @field remove_instrument_called boolean
+--- @field unregister_instrument_called boolean
 --- @field unregister_script_called boolean
 --- @field register_script_called boolean
 --- @field rename_script_called boolean
 --- @field rename_instrument_called boolean
 --- @field set_new_instrument_indexes_calls table[]
 --- @field set_new_phrase_indexes_calls table[]
---- @field remove_instrument_calls table[]
+--- @field unregister_instrument_calls table[]
 --- @field unregister_script_calls table[]
 --- @field register_script_calls table[]
 --- @field rename_script_calls table[]
@@ -34,76 +36,81 @@ function M.create_rust_backend_mock()
     local mock = {
         set_new_instrument_indexes_called = false,
         set_new_phrase_indexes_called = false,
-        remove_instrument_called = false,
+        unregister_instrument_called = false,
         unregister_script_called = false,
         register_script_called = false,
         rename_script_called = false,
         rename_instrument_called = false,
         set_new_instrument_indexes_calls = {},
         set_new_phrase_indexes_calls = {},
-        remove_instrument_calls = {},
+        unregister_instrument_calls = {},
         unregister_script_calls = {},
         register_script_calls = {},
         rename_script_calls = {},
         rename_instrument_calls = {},
+        pending_changes = {},
     }
 
-    function mock:set_new_instrument_indexes(instrument_indexes)
+    function mock:take_changes()
+        local changes = self.pending_changes
+        self.pending_changes = {}
+        return changes
+    end
+
+    function mock:set_new_instrument_indexes(id_index_pairs)
         self.set_new_instrument_indexes_called = true
         table.insert(self.set_new_instrument_indexes_calls, {
-            instrument_indexes = instrument_indexes
+            id_index_pairs = id_index_pairs
         })
     end
 
-    function mock:set_new_phrase_indexes(instrument_index, phrase_indexes)
+    function mock:set_new_phrase_indexes(instrument_id, id_index_pairs)
         self.set_new_phrase_indexes_called = true
         table.insert(self.set_new_phrase_indexes_calls, {
-            instrument_index = instrument_index,
-            phrase_indexes = phrase_indexes
+            instrument_id = instrument_id,
+            id_index_pairs = id_index_pairs
         })
     end
 
-    function mock:remove_instrument(index)
-        self.remove_instrument_called = true
-        table.insert(self.remove_instrument_calls, {
-            index = index
+    function mock:unregister_instrument(instrument_id)
+        self.unregister_instrument_called = true
+        table.insert(self.unregister_instrument_calls, {
+            instrument_id = instrument_id
         })
     end
 
-    function mock:unregister_script(instrument_index, phrase_index)
+    function mock:unregister_script(instrument_id, phrase_id)
         self.unregister_script_called = true
         table.insert(self.unregister_script_calls, {
-            instrument_index = instrument_index,
-            phrase_index = phrase_index
+            instrument_id = instrument_id,
+            phrase_id = phrase_id
         })
     end
 
-    function mock:rename_instrument(instrument_index, old_name, new_name)
+    function mock:rename_instrument(instrument_id, new_name)
         self.rename_instrument_called = true
         table.insert(self.rename_instrument_calls, {
-            instrument_index = instrument_index,
-            old_name = old_name,
+            instrument_id = instrument_id,
             new_name = new_name
         })
     end
 
-    function mock:register_script(instrument_index, instrument_name, phrase_index, phrase_name, script_body)
+    function mock:register_script(instrument_id, instrument_name, phrase_id, phrase_name, script_body)
         self.register_script_called = true
         table.insert(self.register_script_calls, {
-            instrument_index = instrument_index,
+            instrument_id = instrument_id,
             instrument_name = instrument_name,
-            phrase_index = phrase_index,
+            phrase_id = phrase_id,
             phrase_name = phrase_name,
             script_body = script_body
         })
     end
 
-    function mock:rename_script(instrument_index, phrase_index, old_name, new_name)
+    function mock:rename_script(instrument_id, phrase_id, new_name)
         self.rename_script_called = true
         table.insert(self.rename_script_calls, {
-            instrument_index = instrument_index,
-            phrase_index = phrase_index,
-            old_name = old_name,
+            instrument_id = instrument_id,
+            phrase_id = phrase_id,
             new_name = new_name
         })
     end
@@ -111,18 +118,19 @@ function M.create_rust_backend_mock()
     function mock:reset()
         self.set_new_instrument_indexes_called = false
         self.set_new_phrase_indexes_called = false
-        self.remove_instrument_called = false
+        self.unregister_instrument_called = false
         self.unregister_script_called = false
         self.register_script_called = false
         self.rename_script_called = false
         self.rename_instrument_called = false
         self.set_new_instrument_indexes_calls = {}
         self.set_new_phrase_indexes_calls = {}
-        self.remove_instrument_calls = {}
+        self.unregister_instrument_calls = {}
         self.unregister_script_calls = {}
         self.register_script_calls = {}
         self.rename_script_calls = {}
         self.rename_instrument_calls = {}
+        self.pending_changes = {}
     end
 
     return mock

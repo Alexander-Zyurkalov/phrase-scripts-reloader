@@ -19,7 +19,7 @@
 --- @field swap_instrument_indexes fun(self: IndexRegistry, index1: number, index2: number)
 --- @field swap_phrase_indexes fun(self: IndexRegistry, instrument_id: number, index1: number, index2: number)
 --- @field register_instrument fun(self: IndexRegistry, instrument_index: number, instrument_name: string): number
---- @field remove_instrument fun(self: IndexRegistry, instrument_id: number)
+--- @field unregister_instrument fun(self: IndexRegistry, instrument_id: number)
 --- @field register_phrase fun(self: IndexRegistry, instrument_id: number, phrase_index: number, phrase_name: string): number
 --- @field remove_phrase fun(self: IndexRegistry, instrument_id: number, phrase_id: number)
 --- @field get_instrument_by_id fun(self: IndexRegistry, instrument_id: number): InstrumentData|nil
@@ -178,7 +178,7 @@ end
 
 --- Removes an instrument
 --- @param instrument_id number The unique instrument ID
-function IndexRegistry:remove_instrument(instrument_id)
+function IndexRegistry:unregister_instrument(instrument_id)
     local instrument_data = self.instrument_map[instrument_id]
     local instrument_index = instrument_data and instrument_data.current_index
     self.instrument_map[instrument_id] = nil
