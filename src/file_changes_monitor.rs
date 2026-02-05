@@ -28,6 +28,7 @@ impl FileChangesMonitor {
                         new_changes.push(Change { path: event.path.clone(), text });
                     }
                 }
+                // TODO: consider using parking_lot
                 changes_for_watcher.lock().unwrap().append(&mut new_changes);
             }
             Err(e) => {
@@ -40,9 +41,7 @@ impl FileChangesMonitor {
     }
 
     pub fn watch_file(&mut self, path: &Path) -> Result<()> {
-        if let Ok(_) = self.changes.lock() {
-            self.debouncer.watcher().watch(path, RecursiveMode::NonRecursive)?
-        }
+        self.debouncer.watcher().watch(path, RecursiveMode::NonRecursive)?;
         Ok(())
     }
 
@@ -61,7 +60,7 @@ impl FileChangesMonitor {
         }
     }
 
-    // TODO: at should return Result
+    // TODO: it should return Result
     // TODO: code duplication
     pub fn load_file(&mut self, path: &Path) {
         if let Ok(text) = fs::read_to_string(path) {
@@ -97,8 +96,8 @@ mod test {
 
         let changes = file_monitor.take_changes();
         assert_eq!(
-            vec![Change { path: temp_path.clone(), text: TEXT_TO_APPEND.to_string() }],
-            changes
+            [Change { path: temp_path.clone(), text: TEXT_TO_APPEND.to_string() }],
+            *changes
         );
 
         let unwatch_result = file_monitor.unwatch_file(temp_path.as_path());
@@ -115,6 +114,7 @@ mod test {
         assert!(changes.is_empty());
     }
 
+    // TODO: return io::Result<()>
     fn append_to_file(temp_path: &Path) {
         let mut file = OpenOptions::new().append(true).open(temp_path).unwrap();
         write!(file, "{}", TEXT_TO_APPEND).unwrap();

@@ -236,6 +236,7 @@ impl Backend {
                 .script_path_registry
                 .get_ids(&path)
                 // TODO: replace them all with thiserror
+                // TODO: anywhere where we use formatting, use .with_context(|| anyhow!("Can't find ids for the path: {:?}", path))?;
                 .context(anyhow!("Can't find ids for the path: {:?}", path))?;
 
             let instrument_name = self.instrument_registry.get_instrument_name(instrument_id)?;

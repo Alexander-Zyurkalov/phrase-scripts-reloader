@@ -97,7 +97,7 @@ impl InstrumentRegistry {
                     .entry(*instrument_id)
                     .or_insert(InstrumentMap {
                         instrument_index: *instrument_index,
-                        phrase_indexes: Default::default(),
+                        phrase_indexes: HashMap::default(),
                     });
             instr_entry.instrument_index = *instrument_index;
         }
@@ -118,6 +118,7 @@ impl InstrumentRegistry {
         }
     }
 
+    // TODO: here is better to use &str instead of AsRef to prevent consuming
     pub fn set_instrument_name(&mut self, instrument_id: InstrumentId, name: impl AsRef<str>) {
         self.instrument_names
             .insert(instrument_id, Rc::from(name.as_ref()));

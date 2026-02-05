@@ -54,6 +54,7 @@ impl ScriptPathRegistry {
         .into();
 
         self.paths_to_ids.insert(path.clone(), (instrument_id, phrase_id));
+        // TODO: use match phrases.entry(...)
         Ok(phrases.entry(phrase_index).or_insert(path).clone())
     }
 

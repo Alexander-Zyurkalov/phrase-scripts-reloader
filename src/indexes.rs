@@ -31,6 +31,12 @@ fn validate_index(value: u8, min: u8, max: u8) -> Result<u8> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InstrumentIndex(u8);
 
+// TODO: Better to have simple error structs for simple datatypes
+// #[derive(Debug)]
+// struct InvalidIndex;
+// impl fmt::Display for InvalidIndex { ...
+//     impl std::error::Error for InvalidIndex {}
+
 impl TryFrom<u8> for InstrumentIndex {
     type Error = anyhow::Error;
     fn try_from(value: u8) -> Result<InstrumentIndex> {
