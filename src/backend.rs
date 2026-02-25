@@ -232,25 +232,22 @@ impl Backend {
         let mut script_changes = Vec::with_capacity(changes.len());
         for change in changes {
             let path = Rc::from(change.path);
-            let (instrument_id, phrase_id) = self
-                .script_path_registry
-                .get_ids(&path)
-                // TODO: replace them all with thiserror
-                // TODO: anywhere where we use formatting, use .with_context(|| anyhow!("Can't find ids for the path: {:?}", path))?;
-                .context(anyhow!("Can't find ids for the path: {:?}", path))?;
+            if let Some(( instrument_id, phrase_id )) = self.script_path_registry.get_ids(&path) {
+                let instrument_name =
+                    self.instrument_registry.get_instrument_name(instrument_id)?;
+                let phrase_name =
+                    self.instrument_registry.get_phrase_name(instrument_id, phrase_id)?;
+                let script_body = change.text;
 
-            let instrument_name = self.instrument_registry.get_instrument_name(instrument_id)?;
-            let phrase_name = self.instrument_registry.get_phrase_name(instrument_id, phrase_id)?;
-            let script_body = change.text;
-
-            let script_change = ScriptChange {
-                instrument_id,
-                instrument_name,
-                phrase_id,
-                phrase_name,
-                script_body,
-            };
-            script_changes.push(script_change);
+                let script_change = ScriptChange {
+                    instrument_id,
+                    instrument_name,
+                    phrase_id,
+                    phrase_name,
+                    script_body,
+                };
+                script_changes.push(script_change);
+            }
         }
         Ok(script_changes)
     }
@@ -490,8 +487,7 @@ mod test {
         assert!(old_phrase_path.exists(), "Old phrase should also exist");
         assert!(new_phrase_path.exists(), "New phrase path should exist");
 
-        // TODO: changes don't come after updating the song path
-        // test_take_changes(&mut backend, new_phrase_path.into());
+        test_take_changes(&mut backend, new_phrase_path.into());
     }
 
     #[test]
@@ -533,8 +529,7 @@ mod test {
             .join("001-Intro-Part1.lua");
         assert!(new_path.exists());
 
-        // TODO: changes don't come after renaming the scipt
-        // test_take_changes(&mut backend, new_path.into());
+        test_take_changes(&mut backend, new_path.into());
     }
 
     #[test]
@@ -602,8 +597,7 @@ mod test {
             "Backup content should match original content"
         );
 
-        // TODO: changes don't come after renaming the instrumment
-        // test_take_changes(&mut backend, new_phrase_path.into());
+        test_take_changes(&mut backend, new_phrase_path.into());
     }
 
     #[test]
@@ -652,6 +646,5 @@ mod test {
         assert!(new_path.exists());
 
         test_no_changes(&mut backend, phrase_path.into());
-
     }
 }
