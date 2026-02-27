@@ -4,6 +4,7 @@ mod indexes;
 mod instrument_registry;
 mod script_paths;
 
+use crate::backend::Backend;
 use std::ffi::{c_longlong, c_void, CStr};
 use std::os::raw::{c_char, c_int};
 use std::ptr::{null, null_mut};
@@ -40,9 +41,10 @@ unsafe extern "C" {
     fn lua_createtable(L: *mut lua_State, narr: c_int, nrec: c_int);
     fn lua_newuserdata(L: *mut lua_State, size: usize) -> *mut c_void;
     fn luaL_newmetatable(L: *mut lua_State, tname: *const c_char) -> c_int;
+    fn lua_getfield(L: *mut lua_State, index: c_int, k: *const c_char);
+    fn lua_setmetatable(L: *mut lua_State, objindex: c_int) -> c_int;
     fn luaL_setmetatable(L: *mut lua_State, tname: *const c_char);
-    // fn lua_settop(L: *mut lua_State, index: c_int);
-    fn lua_pop(L: *mut lua_State, index: c_int);
+    fn lua_settop(L: *mut lua_State, index: c_int);
     fn lua_touserdata(L: *mut lua_State, index: c_int) -> *mut std::ffi::c_void;
     fn luaL_checklstring(L: *mut lua_State, arg: c_int, l: *mut usize) -> *const c_char;
     fn luaL_checkinteger(L: *mut lua_State, arg: c_int) -> c_longlong;
@@ -50,6 +52,7 @@ unsafe extern "C" {
     fn luaL_error(L: *mut lua_State, fmt: *const c_char, ...) -> c_int;
 }
 
+const LUA_REGISTRYINDEX: c_int = -10000;
 const BACKEND_CLASS_MT_NAME: *const c_char = b"RustBackend\0".as_ptr() as *const c_char;
 
 #[allow(non_snake_case)]
@@ -69,14 +72,14 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
         };
         println!("Creating the Backend object");
         println!("The song path = {}", path);
-        // let c_seconds = luaL_checkinteger(L, 2);
+        let c_seconds = luaL_checkinteger(L, 2);
+        println!("Seconds = {}", c_seconds);
         // let backend = Backend::new(path, Duration::from_secs(c_seconds as u64));
-        // let ud = lua_newuserdata(L, size_of::<*mut Backend>()) as *mut *mut Backend;
         // std::ptr::write(ud, Box::into_raw(Box::new(backend)));
         // let backend: *mut Backend =
-        //     lua_newuserdata(L, size_of::<*mut Backend>()) as *mut Backend;
-        //
-        // luaL_setmetatable(L, BACKEND_CLASS_MT_NAME);
+        lua_newuserdata(L, size_of::<*mut Backend>()) as *mut Backend;
+        lua_getfield(L, LUA_REGISTRYINDEX, BACKEND_CLASS_MT_NAME);
+        lua_setmetatable(L, -2);
     }
     1
 }
@@ -109,10 +112,9 @@ const RUST_BACKEND_LIB_META: [luaL_Reg; 2] = [
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn luaopen_rust_backend(L: *mut lua_State) -> c_int {
     unsafe {
-        println!("Loading the library");
-        // luaL_newmetatable(L, BACKEND_CLASS_MT_NAME);
-        // luaL_register(L, null(), RUST_BACKEND_CLASS_META.as_ptr());
-        // lua_pop(L, 1);
+        luaL_newmetatable(L, BACKEND_CLASS_MT_NAME);
+        luaL_register(L, null(), RUST_BACKEND_CLASS_META.as_ptr());
+        lua_settop(L, -1);
         let library_name = b"rust_backend".as_ptr() as *const c_char;
         luaL_register(L, library_name, RUST_BACKEND_LIB_META.as_ptr());
     }
