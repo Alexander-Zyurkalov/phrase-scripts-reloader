@@ -8,6 +8,7 @@ use crate::backend::Backend;
 use std::ffi::{c_longlong, c_void, CStr};
 use std::os::raw::{c_char, c_int};
 use std::ptr::{null, null_mut};
+use std::time::Duration;
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -74,10 +75,12 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
         println!("The song path = {}", path);
         let c_seconds = luaL_checkinteger(L, 2);
         println!("Seconds = {}", c_seconds);
-        // let backend = Backend::new(path, Duration::from_secs(c_seconds as u64));
-        // std::ptr::write(ud, Box::into_raw(Box::new(backend)));
-        // let backend: *mut Backend =
-        lua_newuserdata(L, size_of::<*mut Backend>()) as *mut Backend;
+
+        let backend = Box::new(Backend::new(path, Duration::from_secs(c_seconds as u64)));
+        std::ptr::write(
+            lua_newuserdata(L, size_of::<*mut Backend>()) as *mut *mut Backend,
+            Box::into_raw(backend),
+        );
         lua_getfield(L, LUA_REGISTRYINDEX, BACKEND_CLASS_MT_NAME);
         lua_setmetatable(L, -2);
     }
@@ -89,11 +92,12 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
 unsafe extern "C" fn backend_gc(L: *mut lua_State) -> c_int {
     unsafe {
         println!("Destroying the Backend object");
-        // let ud = lua_touserdata(L, 1) as *mut *mut Backend;
-        // if !ud.is_null() && !(*ud).is_null() {
-        //     drop(Box::from_raw(*ud));
-        //     *ud = null_mut();
-        // }
+        let ud = lua_touserdata(L, 1) as *mut *mut Backend;
+        if !ud.is_null() && !(*ud).is_null() {
+            drop(Box::from_raw(*ud));
+            println!("Dropped the Backend");
+            *ud = null_mut();
+        }
     }
     0
 }
