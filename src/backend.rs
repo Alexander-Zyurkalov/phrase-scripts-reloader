@@ -362,9 +362,9 @@ mod test {
         backend: &mut Backend,
         instrument_id: usize,
         phrase_id: usize,
-        instrument_index: u8,
+        instrument_index: i64,
         instrument_name: &str,
-        phrase_index: u8,
+        phrase_index: i64,
         phrase_name: &str,
     ) -> (InstrumentId, PhraseId) {
         let instrument_id = InstrumentId::from(instrument_id);

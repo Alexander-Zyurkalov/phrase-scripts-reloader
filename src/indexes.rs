@@ -2,13 +2,13 @@ use std::fmt;
 use std::fmt::Formatter;
 use anyhow::{anyhow, Result};
 
-const MIN_INSTRUMENT_INDEX: u8 = 1;
-const MAX_INSTRUMENT_INDEX: u8 = 126;
+const MIN_INSTRUMENT_INDEX: i64 = 1;
+const MAX_INSTRUMENT_INDEX: i64 = 126;
 
-const MIN_PHRASE_INDEX: u8 = 1;
-const MAX_PHRASE_INDEX: u8 = 126;
+const MIN_PHRASE_INDEX: i64 = 1;
+const MAX_PHRASE_INDEX: i64 = 126;
 
-fn validate_index(value: u8, min: u8, max: u8) -> Result<u8> {
+fn validate_index(value: i64, min: i64, max: i64) -> Result<u8> {
     if value > max {
         return Err(anyhow!(
             "The value is bigger than {}, it should be within {}..{}",
@@ -25,7 +25,7 @@ fn validate_index(value: u8, min: u8, max: u8) -> Result<u8> {
             max
         ));
     }
-    Ok(value)
+    Ok(value as u8)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -37,9 +37,9 @@ pub struct InstrumentIndex(u8);
 // impl fmt::Display for InvalidIndex { ...
 //     impl std::error::Error for InvalidIndex {}
 
-impl TryFrom<u8> for InstrumentIndex {
+impl TryFrom<i64> for InstrumentIndex {
     type Error = anyhow::Error;
-    fn try_from(value: u8) -> Result<InstrumentIndex> {
+    fn try_from(value: i64) -> Result<InstrumentIndex> {
         Ok(InstrumentIndex(validate_index(
             value,
             MIN_INSTRUMENT_INDEX,
@@ -57,9 +57,9 @@ impl fmt::Display for InstrumentIndex {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PhraseIndex(u8);
 
-impl TryFrom<u8> for PhraseIndex {
+impl TryFrom<i64> for PhraseIndex {
     type Error = anyhow::Error;
-    fn try_from(value: u8) -> Result<PhraseIndex> {
+    fn try_from(value: i64) -> Result<PhraseIndex> {
         Ok(PhraseIndex(validate_index(
             value,
             MIN_PHRASE_INDEX,
