@@ -147,18 +147,6 @@ unsafe fn set_new_instrument_indexes_inner(
     }
 }
 
-unsafe fn get_index<T: TryFrom<i64>>(L: *mut lua_State, index: i64) -> Result<T, c_int>
-where
-    <T as TryFrom<i64>>::Error: Display,
-{
-    match T::try_from(index) {
-        Ok(index) => Ok(index),
-        Err(err) => {
-            let msg = format!("Invalid index: {}\0", err);
-            unsafe { Err(luaL_error(L, msg.as_ptr() as *const c_char)) }
-        }
-    }
-}
 unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
     unsafe {
         let ud = lua_touserdata(L, 1) as *mut *mut Backend;
