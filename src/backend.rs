@@ -27,9 +27,13 @@ pub struct Backend {
 // public functions
 impl Backend {
     pub fn new(song_path: impl Into<PathBuf>, monitoring_interval: Duration) -> Self {
+        let buf = song_path.into();
+        let path: &str = buf.to_str().unwrap();
+        println!("Test print, path = {}, duration = {:?}", path, monitoring_interval);
+
         Self {
             file_changes_monitor: FileChangesMonitor::new(monitoring_interval),
-            script_path_registry: ScriptPathRegistry::new(song_path),
+            script_path_registry: ScriptPathRegistry::new(buf),
             instrument_registry: InstrumentRegistry::new(),
         }
     }
@@ -232,7 +236,7 @@ impl Backend {
         let mut script_changes = Vec::with_capacity(changes.len());
         for change in changes {
             let path = Rc::from(change.path);
-            if let Some(( instrument_id, phrase_id )) = self.script_path_registry.get_ids(&path) {
+            if let Some((instrument_id, phrase_id)) = self.script_path_registry.get_ids(&path) {
                 let instrument_name =
                     self.instrument_registry.get_instrument_name(instrument_id)?;
                 let phrase_name =
