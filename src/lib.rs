@@ -4,11 +4,9 @@ mod indexes;
 mod instrument_registry;
 mod script_paths;
 
-use crate::backend::Backend;
-use std::ffi::{c_longlong, CStr};
+use std::ffi::{c_longlong, c_void, CStr};
 use std::os::raw::{c_char, c_int};
 use std::ptr::{null, null_mut};
-use std::time::Duration;
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -40,7 +38,7 @@ unsafe extern "C" {
     );
     fn lua_pushstring(L: *mut lua_State, s: *const c_char) -> *const c_char;
     fn lua_createtable(L: *mut lua_State, narr: c_int, nrec: c_int);
-    fn lua_newuserdata(L: *mut lua_State, size: usize);
+    fn lua_newuserdata(L: *mut lua_State, size: usize) -> *mut c_void;
     fn luaL_newmetatable(L: *mut lua_State, tname: *const c_char) -> c_int;
     fn luaL_setmetatable(L: *mut lua_State, tname: *const c_char);
     // fn lua_settop(L: *mut lua_State, index: c_int);
@@ -52,7 +50,7 @@ unsafe extern "C" {
     fn luaL_error(L: *mut lua_State, fmt: *const c_char, ...) -> c_int;
 }
 
-const BACKEND_MT_NAME: *const c_char = b"RustBackend\0".as_ptr() as *const c_char;
+const BACKEND_CLASS_MT_NAME: *const c_char = b"RustBackend\0".as_ptr() as *const c_char;
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
@@ -70,12 +68,15 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
             }
         };
         println!("Creating the Backend object");
+        println!("The song path = {}", path);
         // let c_seconds = luaL_checkinteger(L, 2);
         // let backend = Backend::new(path, Duration::from_secs(c_seconds as u64));
         // let ud = lua_newuserdata(L, size_of::<*mut Backend>()) as *mut *mut Backend;
         // std::ptr::write(ud, Box::into_raw(Box::new(backend)));
-
-        luaL_setmetatable(L, BACKEND_MT_NAME);
+        // let backend: *mut Backend =
+        //     lua_newuserdata(L, size_of::<*mut Backend>()) as *mut Backend;
+        //
+        // luaL_setmetatable(L, BACKEND_CLASS_MT_NAME);
     }
     1
 }
@@ -94,12 +95,12 @@ unsafe extern "C" fn backend_gc(L: *mut lua_State) -> c_int {
     0
 }
 
-const RUST_BACKEND_META: [luaL_Reg; 2] = [
+const RUST_BACKEND_CLASS_META: [luaL_Reg; 2] = [
     luaL_Reg { name: b"__gc\0".as_ptr() as *const c_char, func: backend_gc as lua_CFunction },
     luaL_Reg { name: null(), func: null() },
 ];
 
-const RUST_BACKEND_LIB: [luaL_Reg; 2] = [
+const RUST_BACKEND_LIB_META: [luaL_Reg; 2] = [
     luaL_Reg { name: b"new\0".as_ptr() as *const c_char, func: new as lua_CFunction },
     luaL_Reg { name: null(), func: null() },
 ];
@@ -108,11 +109,12 @@ const RUST_BACKEND_LIB: [luaL_Reg; 2] = [
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn luaopen_rust_backend(L: *mut lua_State) -> c_int {
     unsafe {
-        luaL_newmetatable(L, BACKEND_MT_NAME);
-        luaL_register(L, null(), RUST_BACKEND_META.as_ptr());
-        lua_pop(L, 1);
+        println!("Loading the library");
+        // luaL_newmetatable(L, BACKEND_CLASS_MT_NAME);
+        // luaL_register(L, null(), RUST_BACKEND_CLASS_META.as_ptr());
+        // lua_pop(L, 1);
         let library_name = b"rust_backend".as_ptr() as *const c_char;
-        luaL_register(L, library_name, RUST_BACKEND_LIB.as_ptr());
+        luaL_register(L, library_name, RUST_BACKEND_LIB_META.as_ptr());
     }
     1
 }
