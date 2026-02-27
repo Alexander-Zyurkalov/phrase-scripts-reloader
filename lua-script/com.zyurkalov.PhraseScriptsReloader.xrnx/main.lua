@@ -168,7 +168,7 @@ local request_changes_callback = nil
 local function on_new_document()
     renoise.app():show_status("PhraseScriptsReloader: initializing observers for new document")
 
-    local rust_backend = RustBackend.new(renoise.song().file_name)
+    local rust_backend = RustBackend.new(renoise.song().file_name, 2)
     local registry = IndexRegistry.new()
     local main = MainModule.new(rust_backend, registry)
 

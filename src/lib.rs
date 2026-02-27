@@ -71,10 +71,7 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
                 );
             }
         };
-        println!("Creating the Backend object");
-        println!("The song path = {}", path);
         let c_seconds = luaL_checkinteger(L, 2);
-        println!("Seconds = {}", c_seconds);
 
         let backend = Box::new(Backend::new(path, Duration::from_secs(c_seconds as u64)));
         std::ptr::write(
@@ -91,11 +88,9 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
 #[allow(non_snake_case)]
 unsafe extern "C" fn backend_gc(L: *mut lua_State) -> c_int {
     unsafe {
-        println!("Destroying the Backend object");
         let ud = lua_touserdata(L, 1) as *mut *mut Backend;
         if !ud.is_null() && !(*ud).is_null() {
             drop(Box::from_raw(*ud));
-            println!("Dropped the Backend");
             *ud = null_mut();
         }
     }

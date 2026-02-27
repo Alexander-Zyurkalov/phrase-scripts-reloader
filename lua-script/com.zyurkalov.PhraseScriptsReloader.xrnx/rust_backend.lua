@@ -14,10 +14,12 @@ local RustBackend = {}
 RustBackend.__index = RustBackend
 
 ---@param song_path string
+---@param monitor_interval number
 ---@return RustBackend
-function RustBackend.new(song_path)
+function RustBackend.new(song_path, monitor_interval)
     local self = setmetatable({}, RustBackend)
     self.song_path = song_path
+    self.monitor_interval =  monitor_interval
     return self
 end
 
