@@ -5,7 +5,9 @@ mod instrument_registry;
 mod script_paths;
 
 use crate::backend::Backend;
+use crate::indexes::{InstrumentId, InstrumentIndex};
 use std::ffi::{c_longlong, c_void, CStr};
+use std::fmt::Display;
 use std::os::raw::{c_char, c_int};
 use std::ptr::{null, null_mut};
 use std::time::Duration;
@@ -51,6 +53,11 @@ unsafe extern "C" {
     fn luaL_checkinteger(L: *mut lua_State, arg: c_int) -> c_longlong;
     fn luaL_register(L: *mut lua_State, libname: *const c_char, l: *const luaL_Reg);
     fn luaL_error(L: *mut lua_State, fmt: *const c_char, ...) -> c_int;
+    fn lua_rawgeti(L: *mut lua_State, index: c_int, n: c_int);
+    fn lua_gettop(L: *mut lua_State) -> c_int;
+    fn lua_tointeger(L: *mut lua_State, index: c_int) -> i64;
+    fn lua_type(L: *mut lua_State, index: c_int) -> c_int;
+    fn lua_objlen(L: *mut lua_State, index: c_int) -> usize; // Lua 5.1
 }
 
 const LUA_REGISTRYINDEX: c_int = -10000;
@@ -84,6 +91,95 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
     1
 }
 
+#[inline]
+unsafe fn lua_pop(L: *mut lua_State, n: c_int) {
+    lua_settop(L, -n - 1);
+}
+
+unsafe extern "C" fn set_new_instrument_indexes(L: *mut lua_State) -> c_int {
+    unsafe {
+        let ud = lua_touserdata(L, 1) as *mut *mut Backend;
+        if ud.is_null() || (*ud).is_null() {
+            return luaL_error(L, c"Invalid Backend userdata".as_ptr());
+        }
+        let mut backend = Box::from_raw(*ud);
+
+        let len = lua_objlen(L, 2) as c_int;
+        let mut pairs: Vec<(InstrumentId, InstrumentIndex)> = Vec::with_capacity(len as usize);
+
+        for i in 1..=len {
+            // Push outer_table[i] (the inner {id, index} pair)
+            lua_rawgeti(L, 2, i);
+
+            // Get inner[1] = id
+            lua_rawgeti(L, -1, 1);
+            let id = lua_tointeger(L, -1);
+            lua_pop(L, 1);
+
+            // Get inner[2] = index
+            lua_rawgeti(L, -1, 2);
+            let index = lua_tointeger(L, -1);
+            lua_pop(L, 1);
+
+            // Pop the inner table
+            lua_pop(L, 1);
+
+            let instrument_index = match get_index(L, index) {
+                Ok(value) => value,
+                Err(value) => return value,
+            };
+            pairs.push((InstrumentId::from(id as usize), instrument_index));
+        }
+
+        backend.set_new_instrument_indexes(pairs);
+
+        *ud = Box::into_raw(backend);
+    }
+    0
+}
+
+unsafe fn get_index<T: TryFrom<i64>>(L: *mut lua_State, index: i64) -> Result<T, c_int>
+where
+    <T as TryFrom<i64>>::Error: Display,
+{
+    Ok(match T::try_from(index) {
+        Ok(index) => index,
+        Err(err) => {
+            return unsafe {
+                Err(luaL_error(
+                    L,
+                    b"Invalid index: %s\0".as_ptr() as *const c_char,
+                    err.to_string().as_ptr(),
+                ))
+            };
+        }
+    })
+}
+unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
+    unsafe {
+        let ud = lua_touserdata(L, 1) as *mut *mut Backend;
+        if ud.is_null() || (*ud).is_null() {
+            return luaL_error(L, b"Invalid Backend userdata\0".as_ptr() as *const c_char);
+        }
+
+        let mut backend = Box::from_raw(*ud);
+        let instrument_id = luaL_checkinteger(L, 2);
+        let instrument_name = luaL_checklstring(L, 3, null_mut());
+        let phrase_id = luaL_checkinteger(L, 4);
+        let phrase_name = luaL_checklstring(L, 5, null_mut());
+        let script_body = luaL_checklstring(L, 6, null_mut());
+
+        let instrument_id: InstrumentId = InstrumentId::from(instrument_id as usize);
+
+        // Call backend methods here:
+        // backend.register_script(...);
+
+        // Release ownership back without dropping
+        *ud = Box::into_raw(backend);
+    }
+    1
+}
+
 /// __gc metamethod: reconstructs the Box and drops it
 #[allow(non_snake_case)]
 unsafe extern "C" fn backend_gc(L: *mut lua_State) -> c_int {
@@ -102,8 +198,12 @@ const RUST_BACKEND_CLASS_META: [luaL_Reg; 2] = [
     luaL_Reg { name: null(), func: null() },
 ];
 
-const RUST_BACKEND_LIB_META: [luaL_Reg; 2] = [
+const RUST_BACKEND_LIB_META: [luaL_Reg; 3] = [
     luaL_Reg { name: b"new\0".as_ptr() as *const c_char, func: new as lua_CFunction },
+    luaL_Reg {
+        name: b"register_script\0".as_ptr() as *const c_char,
+        func: register_script as lua_CFunction,
+    },
     luaL_Reg { name: null(), func: null() },
 ];
 
