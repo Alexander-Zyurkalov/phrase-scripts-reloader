@@ -33,6 +33,7 @@ pub struct luaL_Reg {
 unsafe extern "C" {
     fn lua_pushinteger(L: *mut lua_State, n: i64);
     fn lua_pushnil(L: *mut lua_State);
+    fn lua_pushvalue(L: *mut lua_State, index: c_int);
     fn lua_tolstring(L: *mut lua_State, index: c_int, len: *mut usize) -> *const c_char;
     fn lua_settable(L: *mut lua_State, index: c_int);
     fn lua_pushcclosure(
@@ -102,7 +103,6 @@ unsafe extern "C" fn set_new_instrument_indexes(L: *mut lua_State) -> c_int {
         if ud.is_null() || (*ud).is_null() {
             return luaL_error(L, c"Invalid Backend userdata".as_ptr());
         }
-        let mut backend = Box::from_raw(*ud);
 
         let len = lua_objlen(L, 2) as c_int;
         let mut pairs: Vec<(InstrumentId, InstrumentIndex)> = Vec::with_capacity(len as usize);
@@ -129,11 +129,11 @@ unsafe extern "C" fn set_new_instrument_indexes(L: *mut lua_State) -> c_int {
                 Err(value) => return value,
             };
             pairs.push((InstrumentId::from(id as usize), instrument_index));
+            println!("Adding instrument index: {} ", instrument_index);
         }
 
+        let backend = &mut **ud;
         backend.set_new_instrument_indexes(pairs);
-
-        *ud = Box::into_raw(backend);
     }
     0
 }
@@ -142,18 +142,13 @@ unsafe fn get_index<T: TryFrom<i64>>(L: *mut lua_State, index: i64) -> Result<T,
 where
     <T as TryFrom<i64>>::Error: Display,
 {
-    Ok(match T::try_from(index) {
-        Ok(index) => index,
+    match T::try_from(index) {
+        Ok(index) => Ok(index),
         Err(err) => {
-            return unsafe {
-                Err(luaL_error(
-                    L,
-                    b"Invalid index: %s\0".as_ptr() as *const c_char,
-                    err.to_string().as_ptr(),
-                ))
-            };
+            let msg = format!("Invalid index: {}\0", err);
+            unsafe { Err(luaL_error(L, msg.as_ptr() as *const c_char)) }
         }
-    })
+    }
 }
 unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
     unsafe {
@@ -183,6 +178,7 @@ unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
 /// __gc metamethod: reconstructs the Box and drops it
 #[allow(non_snake_case)]
 unsafe extern "C" fn backend_gc(L: *mut lua_State) -> c_int {
+    println!("Destructor was called");
     unsafe {
         let ud = lua_touserdata(L, 1) as *mut *mut Backend;
         if !ud.is_null() && !(*ud).is_null() {
@@ -193,8 +189,12 @@ unsafe extern "C" fn backend_gc(L: *mut lua_State) -> c_int {
     0
 }
 
-const RUST_BACKEND_CLASS_META: [luaL_Reg; 2] = [
+const RUST_BACKEND_CLASS_META: [luaL_Reg; 3] = [
     luaL_Reg { name: b"__gc\0".as_ptr() as *const c_char, func: backend_gc as lua_CFunction },
+    luaL_Reg {
+        name: b"set_new_instrument_indexes\0".as_ptr() as *const c_char,
+        func: set_new_instrument_indexes as lua_CFunction,
+    },
     luaL_Reg { name: null(), func: null() },
 ];
 
@@ -213,7 +213,11 @@ pub unsafe extern "C" fn luaopen_rust_backend(L: *mut lua_State) -> c_int {
     unsafe {
         luaL_newmetatable(L, BACKEND_CLASS_MT_NAME);
         luaL_register(L, null(), RUST_BACKEND_CLASS_META.as_ptr());
-        lua_settop(L, -1);
+        lua_pushstring(L, b"__index\0".as_ptr() as *const c_char);
+        lua_pushvalue(L, -2);
+        lua_settable(L, -3);
+
+        lua_pop(L, 1);
         let library_name = b"rust_backend".as_ptr() as *const c_char;
         luaL_register(L, library_name, RUST_BACKEND_LIB_META.as_ptr());
     }
