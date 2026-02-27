@@ -101,41 +101,50 @@ unsafe extern "C" fn set_new_instrument_indexes(L: *mut lua_State) -> c_int {
     unsafe {
         let ud = lua_touserdata(L, 1) as *mut *mut Backend;
         if ud.is_null() || (*ud).is_null() {
-            return luaL_error(L, c"Invalid Backend userdata".as_ptr());
+            lua_pushnil(L);
+            lua_pushstring(L, b"Invalid Backend userdata\0".as_ptr() as *const c_char);
+            return 2;
         }
 
+        match set_new_instrument_indexes_inner(L, ud) {
+            Ok(()) => 0,
+            Err(msg) => {
+                lua_pushnil(L);
+                lua_pushstring(L, msg.as_ptr());
+                2
+            }
+        }
+    }
+}
+
+unsafe fn set_new_instrument_indexes_inner(
+    L: *mut lua_State,
+    ud: *mut *mut Backend,
+) -> Result<(), std::ffi::CString> {
+    unsafe {
         let len = lua_objlen(L, 2) as c_int;
         let mut pairs: Vec<(InstrumentId, InstrumentIndex)> = Vec::with_capacity(len as usize);
 
         for i in 1..=len {
-            // Push outer_table[i] (the inner {id, index} pair)
             lua_rawgeti(L, 2, i);
-
-            // Get inner[1] = id
             lua_rawgeti(L, -1, 1);
             let id = lua_tointeger(L, -1);
             lua_pop(L, 1);
-
-            // Get inner[2] = index
             lua_rawgeti(L, -1, 2);
             let index = lua_tointeger(L, -1);
             lua_pop(L, 1);
-
-            // Pop the inner table
             lua_pop(L, 1);
 
-            let instrument_index = match get_index(L, index) {
-                Ok(value) => value,
-                Err(value) => return value,
-            };
+            let instrument_index = InstrumentIndex::try_from(index).map_err(|err| {
+                std::ffi::CString::new(format!("Invalid index: {}", err)).unwrap()
+            })?;
             pairs.push((InstrumentId::from(id as usize), instrument_index));
-            println!("Adding instrument index: {} ", instrument_index);
         }
 
         let backend = &mut **ud;
         backend.set_new_instrument_indexes(pairs);
+        Ok(())
     }
-    0
 }
 
 unsafe fn get_index<T: TryFrom<i64>>(L: *mut lua_State, index: i64) -> Result<T, c_int>
