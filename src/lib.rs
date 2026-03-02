@@ -6,6 +6,7 @@ mod script_paths;
 
 use crate::backend::Backend;
 use crate::indexes::{InstrumentId, InstrumentIndex};
+use anyhow::{anyhow, Context, Result};
 use std::ffi::{c_longlong, c_void, CStr};
 use std::fmt::Display;
 use std::os::raw::{c_char, c_int};
@@ -99,28 +100,23 @@ unsafe fn lua_pop(L: *mut lua_State, n: c_int) {
 
 unsafe extern "C" fn set_new_instrument_indexes(L: *mut lua_State) -> c_int {
     unsafe {
-        let user_data = lua_touserdata(L, 1) as *mut *mut Backend;
-        if user_data.is_null() || (*user_data).is_null() {
-            lua_pushnil(L);
-            lua_pushstring(L, b"Invalid Backend userdata\0".as_ptr() as *const c_char);
-            return 2;
-        }
-
-        match set_new_instrument_indexes_inner(L, user_data) {
+        match set_new_instrument_indexes_inner(L) {
             Ok(()) => 0,
-            Err(msg) => {
+            Err(err) => {
                 lua_pushnil(L);
-                lua_pushstring(L, msg.as_ptr());
+                let err_cstring = std::ffi::CString::new(err.to_string()).unwrap_or_else(|err| {
+                    std::ffi::CString::new("Can't event make an error message".to_string())
+                        .unwrap()
+                });
+                lua_pushstring(L, err_cstring.as_ptr());
                 2
             }
         }
     }
 }
 
-unsafe fn set_new_instrument_indexes_inner(
-    L: *mut lua_State,
-    ud: *mut *mut Backend,
-) -> Result<(), std::ffi::CString> {
+#[allow(non_snake_case)]
+unsafe fn set_new_instrument_indexes_inner(L: *mut lua_State) -> Result<()> {
     unsafe {
         let len = lua_objlen(L, 2) as c_int;
         let mut pairs: Vec<(InstrumentId, InstrumentIndex)> = Vec::with_capacity(len as usize);
@@ -135,16 +131,24 @@ unsafe fn set_new_instrument_indexes_inner(
             lua_pop(L, 1);
             lua_pop(L, 1);
 
-            let instrument_index = InstrumentIndex::try_from(index).map_err(|err| {
-                std::ffi::CString::new(format!("Invalid index: {}", err)).unwrap()
-            })?;
+            let instrument_index = InstrumentIndex::try_from(index)?;
             pairs.push((InstrumentId::from(id as usize), instrument_index));
         }
 
-        let backend = &mut **ud;
+        let backend = get_backend(L)?;
         backend.set_new_instrument_indexes(pairs);
         Ok(())
     }
+}
+
+#[allow(non_snake_case)]
+unsafe fn get_backend(L: *mut lua_State) -> Result<&'static mut Backend> {
+    let user_data = lua_touserdata(L, 1) as *mut *mut Backend;
+    if user_data.is_null() || (*user_data).is_null() {
+        return Err(anyhow!("Invalid Backend userdata"));
+    }
+    let backend = &mut **user_data;
+    Ok(backend)
 }
 
 unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
