@@ -99,14 +99,14 @@ unsafe fn lua_pop(L: *mut lua_State, n: c_int) {
 
 unsafe extern "C" fn set_new_instrument_indexes(L: *mut lua_State) -> c_int {
     unsafe {
-        let ud = lua_touserdata(L, 1) as *mut *mut Backend;
-        if ud.is_null() || (*ud).is_null() {
+        let user_data = lua_touserdata(L, 1) as *mut *mut Backend;
+        if user_data.is_null() || (*user_data).is_null() {
             lua_pushnil(L);
             lua_pushstring(L, b"Invalid Backend userdata\0".as_ptr() as *const c_char);
             return 2;
         }
 
-        match set_new_instrument_indexes_inner(L, ud) {
+        match set_new_instrument_indexes_inner(L, user_data) {
             Ok(()) => 0,
             Err(msg) => {
                 lua_pushnil(L);
