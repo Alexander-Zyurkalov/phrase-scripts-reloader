@@ -69,7 +69,7 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
     unsafe {
         let path = match get_string_or_error(L, 1) {
             Ok(value) => value,
-            Err(value) => return value,
+            Err(value) => return make_lua_error(L, value),
         };
         let c_seconds = lua_tointeger(L, 2);
 
@@ -114,14 +114,16 @@ unsafe fn make_lua_error(L: *mut lua_State, err: Error) -> c_int {
     2
 }
 
-unsafe fn get_string_or_error(L: *mut lua_State, argument_num: i32) -> Result<String, c_int> {
+unsafe fn get_string_or_error(L: *mut lua_State, argument_num: i32) -> Result<String> {
     unsafe {
-        let c_song_path: *const c_char = lua_tolstring(L, argument_num, null_mut());
-
-        let path = match CStr::from_ptr(c_song_path).to_str() {
-            Ok(str) => str.to_owned(),
-            Err(err_text) => return Err(make_lua_error(L, Error::from(err_text))),
-        };
+        let c_str: *const c_char = lua_tolstring(L, argument_num, null_mut());
+        if c_str.is_null() {
+            return Err(anyhow!("Argument {} is not a string", argument_num));
+        }
+        let path = CStr::from_ptr(c_str)
+            .to_str()
+            .with_context(|| format!("Argument {} contains invalid UTF-8", argument_num))?
+            .to_owned();
         Ok(path)
     }
 }
@@ -174,40 +176,26 @@ unsafe fn get_backend(L: *mut lua_State) -> Result<&'static mut Backend> {
 
 unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
     unsafe {
-        let instrument_id = lua_tointeger(L, 2);
-        let instrument_name = match get_string_or_error(L, 3) {
-            Ok(value) => value,
-            Err(args) => return args,
-        };
-        let phrase_id = lua_tointeger(L, 4);
-        let phrase_name = match get_string_or_error(L, 5) {
-            Ok(value) => value,
-            Err(args) => return args,
-        };
-        let script_body = match get_string_or_error(L, 6) {
-            Ok(value) => value,
-            Err(args) => return args,
-        };
-        match register_script_inner(L, instrument_name, 1) {
+        match register_script_inner(L) {
             Ok(_) => 1,
             Err(err) => make_lua_error(L, err),
         }
     }
 }
 
-unsafe fn register_script_inner(
-    L: *mut lua_State,
-    instrument_name: String,
-    instrument_id: i64,
-) -> Result<()> {
+unsafe fn register_script_inner(L: *mut lua_State) -> Result<()> {
     unsafe {
-
-        // let instrument_id: InstrumentId = InstrumentId::from(instrument_id);
-        // let phrase_id = PhraseId::from(phrase_id);
+        let instrument_id = lua_tointeger(L, 2);
+        let instrument_name = get_string_or_error(L, 3)?;
+        let phrase_id = lua_tointeger(L, 4);
+        let phrase_name = get_string_or_error(L, 5)?;
+        let script_body = get_string_or_error(L, 6)?;
 
         println!("Instrument ID = {}", instrument_id);
         println!("Instrument name = {:?}", instrument_name);
-        // let backed = get_backend(L)?;
+        println!("Phrase ID = {}", phrase_id);
+        println!("Phrase name = {:?}", phrase_name);
+        println!("Script body = {:?}", script_body);
 
         Err(anyhow!("Upps"))
     }

@@ -10,7 +10,7 @@ if err then
     return
 end
 
-local path, err = rust:register_script(1, "Piano", 1, "Intro", "return cycle(\"c4\")")
+local path, err = rust:register_script(1, "Piano", 1, "Intro", 'return cycle("c4")')
 if err then
     print("Error: " .. err)
     return
