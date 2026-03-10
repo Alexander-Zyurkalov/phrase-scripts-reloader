@@ -27,9 +27,10 @@ pub struct Backend {
 // public functions
 impl Backend {
     pub fn new(song_path: impl Into<PathBuf>, monitoring_interval: Duration) -> Self {
+        let buf = song_path.into();
         Self {
             file_changes_monitor: FileChangesMonitor::new(monitoring_interval),
-            script_path_registry: ScriptPathRegistry::new(song_path),
+            script_path_registry: ScriptPathRegistry::new(buf),
             instrument_registry: InstrumentRegistry::new(),
         }
     }
@@ -232,25 +233,22 @@ impl Backend {
         let mut script_changes = Vec::with_capacity(changes.len());
         for change in changes {
             let path = Rc::from(change.path);
-            let (instrument_id, phrase_id) = self
-                .script_path_registry
-                .get_ids(&path)
-                // TODO: replace them all with thiserror
-                // TODO: anywhere where we use formatting, use .with_context(|| anyhow!("Can't find ids for the path: {:?}", path))?;
-                .context(anyhow!("Can't find ids for the path: {:?}", path))?;
+            if let Some((instrument_id, phrase_id)) = self.script_path_registry.get_ids(&path) {
+                let instrument_name =
+                    self.instrument_registry.get_instrument_name(instrument_id)?;
+                let phrase_name =
+                    self.instrument_registry.get_phrase_name(instrument_id, phrase_id)?;
+                let script_body = change.text;
 
-            let instrument_name = self.instrument_registry.get_instrument_name(instrument_id)?;
-            let phrase_name = self.instrument_registry.get_phrase_name(instrument_id, phrase_id)?;
-            let script_body = change.text;
-
-            let script_change = ScriptChange {
-                instrument_id,
-                instrument_name,
-                phrase_id,
-                phrase_name,
-                script_body,
-            };
-            script_changes.push(script_change);
+                let script_change = ScriptChange {
+                    instrument_id,
+                    instrument_name,
+                    phrase_id,
+                    phrase_name,
+                    script_body,
+                };
+                script_changes.push(script_change);
+            }
         }
         Ok(script_changes)
     }
@@ -360,11 +358,11 @@ mod test {
 
     fn create_instrument_and_phrase(
         backend: &mut Backend,
-        instrument_id: usize,
-        phrase_id: usize,
-        instrument_index: u8,
+        instrument_id: i64,
+        phrase_id: i64,
+        instrument_index: i64,
         instrument_name: &str,
-        phrase_index: u8,
+        phrase_index: i64,
         phrase_name: &str,
     ) -> (InstrumentId, PhraseId) {
         let instrument_id = InstrumentId::from(instrument_id);
@@ -460,7 +458,7 @@ mod test {
 
     #[test]
     fn update_song_path() {
-        let (tmp_dir, song_path, mut backend) = setup("filename.xrns");
+        let (tmp_dir, _song_path, mut backend) = setup("filename.xrns");
 
         let instrument_id = InstrumentId::from(3);
         let instrument_index = InstrumentIndex::try_from(1).unwrap();
@@ -478,7 +476,6 @@ mod test {
             .unwrap()
             .to_owned();
 
-        let old_song_path = backend.script_path_registry.get_song_path().to_owned();
         let new_song_path = tmp_dir.path().join("new_filename.xrns");
         let result = backend.update_song_path(new_song_path.as_path());
 
@@ -490,8 +487,7 @@ mod test {
         assert!(old_phrase_path.exists(), "Old phrase should also exist");
         assert!(new_phrase_path.exists(), "New phrase path should exist");
 
-        // TODO: changes don't come after updating the song path
-        // test_take_changes(&mut backend, new_phrase_path.into());
+        test_take_changes(&mut backend, new_phrase_path.into());
     }
 
     #[test]
@@ -533,8 +529,7 @@ mod test {
             .join("001-Intro-Part1.lua");
         assert!(new_path.exists());
 
-        // TODO: changes don't come after renaming the scipt
-        // test_take_changes(&mut backend, new_path.into());
+        test_take_changes(&mut backend, new_path.into());
     }
 
     #[test]
@@ -602,8 +597,7 @@ mod test {
             "Backup content should match original content"
         );
 
-        // TODO: changes don't come after renaming the instrumment
-        // test_take_changes(&mut backend, new_phrase_path.into());
+        test_take_changes(&mut backend, new_phrase_path.into());
     }
 
     #[test]
@@ -652,6 +646,5 @@ mod test {
         assert!(new_path.exists());
 
         test_no_changes(&mut backend, phrase_path.into());
-
     }
 }
