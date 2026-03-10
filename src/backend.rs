@@ -358,8 +358,8 @@ mod test {
 
     fn create_instrument_and_phrase(
         backend: &mut Backend,
-        instrument_id: usize,
-        phrase_id: usize,
+        instrument_id: i64,
+        phrase_id: i64,
         instrument_index: i64,
         instrument_name: &str,
         phrase_index: i64,
