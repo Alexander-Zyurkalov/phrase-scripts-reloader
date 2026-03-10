@@ -168,7 +168,7 @@ local request_changes_callback = nil
 local function on_new_document()
     renoise.app():show_status("PhraseScriptsReloader: initializing observers for new document")
 
-    local rust_backend, err = RustBackend.new(renoise.song().file_name, 1)
+    local rust_backend, err = RustBackend.new(renoise.song().file_name, 500)
     if err then
         print("PhraseScriptsReloader [ERROR] Failed to create backend: " .. err)
         return

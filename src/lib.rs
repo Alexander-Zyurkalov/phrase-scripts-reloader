@@ -122,7 +122,7 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
         };
         let c_seconds = lua_tointeger(L, 2);
 
-        let backend = Box::new(Backend::new(path, Duration::from_secs(c_seconds as u64)));
+        let backend = Box::new(Backend::new(path, Duration::from_millis(c_seconds as u64)));
         std::ptr::write(
             lua_newuserdata(L, size_of::<*mut Backend>()) as *mut *mut Backend,
             Box::into_raw(backend),
