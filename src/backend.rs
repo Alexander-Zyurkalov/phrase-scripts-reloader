@@ -28,8 +28,6 @@ pub struct Backend {
 impl Backend {
     pub fn new(song_path: impl Into<PathBuf>, monitoring_interval: Duration) -> Self {
         let buf = song_path.into();
-        let path: &str = buf.to_str().unwrap();
-
         Self {
             file_changes_monitor: FileChangesMonitor::new(monitoring_interval),
             script_path_registry: ScriptPathRegistry::new(buf),

@@ -5,14 +5,12 @@ mod instrument_registry;
 mod script_paths;
 
 use crate::backend::Backend;
-use crate::indexes::{InstrumentId, InstrumentIndex, PhraseId};
+use crate::indexes::{InstrumentId, InstrumentIndex};
 use anyhow::{anyhow, Context, Error, Result};
 use std::ffi::{c_longlong, c_void, CStr};
 use std::fmt::Display;
 use std::os::raw::{c_char, c_int};
-use std::path::Path;
 use std::ptr::{null, null_mut};
-use std::rc::Rc;
 use std::time::Duration;
 
 #[repr(C)]
@@ -53,7 +51,6 @@ unsafe extern "C" {
     fn luaL_setmetatable(L: *mut lua_State, tname: *const c_char);
     fn lua_settop(L: *mut lua_State, index: c_int);
     fn lua_touserdata(L: *mut lua_State, index: c_int) -> *mut std::ffi::c_void;
-    fn luaL_checklstring(L: *mut lua_State, arg: c_int, l: *mut usize) -> *const c_char;
     fn luaL_checkinteger(L: *mut lua_State, arg: c_int) -> c_longlong;
     fn luaL_register(L: *mut lua_State, libname: *const c_char, l: *const luaL_Reg);
     fn luaL_error(L: *mut lua_State, fmt: *const c_char, ...) -> c_int;
@@ -70,19 +67,11 @@ const BACKEND_CLASS_MT_NAME: *const c_char = b"RustBackend\0".as_ptr() as *const
 #[allow(non_snake_case)]
 unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
     unsafe {
-        let c_song_path: *const c_char = luaL_checklstring(L, 1, null_mut());
-
-        let path = match CStr::from_ptr(c_song_path).to_str() {
-            Ok(str) => str.to_owned(),
-            Err(err_text) => {
-                return luaL_error(
-                    L,
-                    b"Invalid UTF-8 in path: %s\0".as_ptr() as *const c_char,
-                    err_text,
-                );
-            }
+        let path = match get_string_or_error(L, 1) {
+            Ok(value) => value,
+            Err(value) => return value,
         };
-        let c_seconds = luaL_checkinteger(L, 2);
+        let c_seconds = lua_tointeger(L, 2);
 
         let backend = Box::new(Backend::new(path, Duration::from_secs(c_seconds as u64)));
         std::ptr::write(
@@ -102,6 +91,7 @@ unsafe fn lua_pop(L: *mut lua_State, n: c_int) {
 }
 
 // #[allow(non_snake_case)]
+
 // unsafe extern "C" fn update_song_path(L: *mut lua_State) -> c_int {
 //     unsafe {
 //     }
@@ -115,24 +105,35 @@ unsafe fn lua_pop(L: *mut lua_State, n: c_int) {
 //     }
 //  }
 
+unsafe fn make_lua_error(L: *mut lua_State, err: Error) -> c_int {
+    lua_pushnil(L);
+    let err_cstring = std::ffi::CString::new(err.to_string()).unwrap_or_else(|err| {
+        std::ffi::CString::new("Can't even make an error message".to_string()).unwrap()
+    });
+    lua_pushstring(L, err_cstring.as_ptr());
+    2
+}
+
+unsafe fn get_string_or_error(L: *mut lua_State, argument_num: i32) -> Result<String, c_int> {
+    unsafe {
+        let c_song_path: *const c_char = lua_tolstring(L, argument_num, null_mut());
+
+        let path = match CStr::from_ptr(c_song_path).to_str() {
+            Ok(str) => str.to_owned(),
+            Err(err_text) => return Err(make_lua_error(L, Error::from(err_text))),
+        };
+        Ok(path)
+    }
+}
+
 #[allow(non_snake_case)]
 unsafe extern "C" fn set_new_instrument_indexes(L: *mut lua_State) -> c_int {
     unsafe {
         match set_new_instrument_indexes_inner(L) {
             Ok(()) => 0,
-            Err(err) => make_lua_error(L, err)
+            Err(err) => make_lua_error(L, err),
         }
     }
-}
-
-unsafe fn make_lua_error(L: *mut lua_State, err: Error) -> c_int {
-    lua_pushnil(L);
-    let err_cstring = std::ffi::CString::new(err.to_string()).unwrap_or_else(|err| {
-        std::ffi::CString::new("Can't event make an error message".to_string())
-            .unwrap()
-    });
-    lua_pushstring(L, err_cstring.as_ptr());
-    2
 }
 
 #[allow(non_snake_case)]
@@ -173,28 +174,43 @@ unsafe fn get_backend(L: *mut lua_State) -> Result<&'static mut Backend> {
 
 unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
     unsafe {
-        match register_script_inner(L) {
+        let instrument_id = lua_tointeger(L, 2);
+        let instrument_name = match get_string_or_error(L, 3) {
+            Ok(value) => value,
+            Err(args) => return args,
+        };
+        let phrase_id = lua_tointeger(L, 4);
+        let phrase_name = match get_string_or_error(L, 5) {
+            Ok(value) => value,
+            Err(args) => return args,
+        };
+        let script_body = match get_string_or_error(L, 6) {
+            Ok(value) => value,
+            Err(args) => return args,
+        };
+        match register_script_inner(L, instrument_name, 1) {
             Ok(_) => 1,
             Err(err) => make_lua_error(L, err),
         }
     }
 }
 
-unsafe fn register_script_inner(L: *mut lua_State) -> Result<()> {
-    let instrument_id = lua_tointeger(L, 2);
-    let instrument_name = lua_tolstring(L, 3, null_mut());
-    let phrase_id = lua_tointeger(L, 4);
-    let phrase_name = lua_tolstring(L, 5, null_mut());
-    let script_body = lua_tolstring(L, 6, null_mut());
+unsafe fn register_script_inner(
+    L: *mut lua_State,
+    instrument_name: String,
+    instrument_id: i64,
+) -> Result<()> {
+    unsafe {
 
-    // let instrument_id: InstrumentId = InstrumentId::from(instrument_id);
-    // let phrase_id = PhraseId::from(phrase_id);
+        // let instrument_id: InstrumentId = InstrumentId::from(instrument_id);
+        // let phrase_id = PhraseId::from(phrase_id);
 
-    println!("Instrument ID = {}", instrument_id);
-    println!("Instrument name = {:?}", instrument_name);
-    let backed = get_backend(L)?;
+        println!("Instrument ID = {}", instrument_id);
+        println!("Instrument name = {:?}", instrument_name);
+        // let backed = get_backend(L)?;
 
-    Err(anyhow!("Upps"))
+        Err(anyhow!("Upps"))
+    }
 }
 
 /// __gc metamethod: reconstructs the Box and drops it
