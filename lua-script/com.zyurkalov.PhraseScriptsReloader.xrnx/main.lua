@@ -168,7 +168,12 @@ local request_changes_callback = nil
 local function on_new_document()
     renoise.app():show_status("PhraseScriptsReloader: initializing observers for new document")
 
-    local rust_backend = RustBackend.new(renoise.song().file_name, 2)
+    local rust_backend, err = RustBackend.new(renoise.song().file_name, 2)
+    if err then
+        print("PhraseScriptsReloader [ERROR] Failed to create backend: " .. err)
+        return
+    end
+
     local registry = IndexRegistry.new()
     local main = MainModule.new(rust_backend, registry)
 
@@ -197,7 +202,10 @@ local function on_new_document()
     end
 
     saved_document_notifier = function()
-        rust_backend:update_song_path(renoise.song().file_name)
+        local _, err = rust_backend:update_song_path(renoise.song().file_name)
+        if err then
+            print("PhraseScriptsReloader [ERROR] update_song_path: " .. err)
+        end
     end
     renoise.tool().app_saved_document_observable:add_notifier(saved_document_notifier)
 end
