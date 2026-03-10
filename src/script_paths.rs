@@ -58,6 +58,7 @@ impl ScriptPathRegistry {
         Ok(phrases.entry(phrase_index).or_insert(path).clone())
     }
 
+    #[cfg(test)]
     pub fn get_path(
         &self,
         instrument_index: InstrumentIndex,
