@@ -7,7 +7,7 @@ mod script_paths;
 use crate::backend::Backend;
 use crate::indexes::{InstrumentId, InstrumentIndex, PhraseId, PhraseIndex};
 use anyhow::{anyhow, Context, Error, Result};
-use std::ffi::{c_longlong, c_void, CStr};
+use std::ffi::{c_void, CStr};
 use std::fmt::Display;
 use std::os::raw::{c_char, c_int};
 use std::ptr::{null, null_mut};
@@ -37,23 +37,15 @@ unsafe extern "C" {
     fn lua_pushvalue(L: *mut lua_State, index: c_int);
     fn lua_tolstring(L: *mut lua_State, index: c_int, len: *mut usize) -> *const c_char;
     fn lua_settable(L: *mut lua_State, index: c_int);
-    fn lua_pushcclosure(
-        L: *mut lua_State,
-        f: unsafe extern "C" fn(*mut lua_State) -> c_int,
-        n: c_int,
-    );
     fn lua_pushstring(L: *mut lua_State, s: *const c_char) -> *const c_char;
     fn lua_createtable(L: *mut lua_State, narr: c_int, nrec: c_int);
     fn lua_newuserdata(L: *mut lua_State, size: usize) -> *mut c_void;
     fn luaL_newmetatable(L: *mut lua_State, tname: *const c_char) -> c_int;
     fn lua_getfield(L: *mut lua_State, index: c_int, k: *const c_char);
     fn lua_setmetatable(L: *mut lua_State, objindex: c_int) -> c_int;
-    fn luaL_setmetatable(L: *mut lua_State, tname: *const c_char);
     fn lua_settop(L: *mut lua_State, index: c_int);
     fn lua_touserdata(L: *mut lua_State, index: c_int) -> *mut std::ffi::c_void;
-    fn luaL_checkinteger(L: *mut lua_State, arg: c_int) -> c_longlong;
     fn luaL_register(L: *mut lua_State, libname: *const c_char, l: *const luaL_Reg);
-    fn luaL_error(L: *mut lua_State, fmt: *const c_char, ...) -> c_int;
     fn lua_rawgeti(L: *mut lua_State, index: c_int, n: c_int);
     fn lua_gettop(L: *mut lua_State) -> c_int;
     fn lua_tointeger(L: *mut lua_State, index: c_int) -> i64;
@@ -66,10 +58,6 @@ const LUA_TNIL: c_int = 0;
 const LUA_TSTRING: c_int = 4;
 
 const BACKEND_CLASS_MT_NAME: *const c_char = b"RustBackend\0".as_ptr() as *const c_char;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 #[inline]
 #[allow(non_snake_case)]
@@ -112,17 +100,12 @@ unsafe fn get_backend(L: *mut lua_State) -> Result<&'static mut Backend> {
     Ok(backend)
 }
 
-/// Push a Rust string onto the Lua stack via a temporary CString.
 #[allow(non_snake_case)]
 unsafe fn push_rust_string(L: *mut lua_State, s: &str) {
     let cstring = std::ffi::CString::new(s)
         .unwrap_or_else(|_| std::ffi::CString::new("<invalid string>").unwrap());
     lua_pushstring(L, cstring.as_ptr());
 }
-
-// ---------------------------------------------------------------------------
-// new(path, seconds) -> Backend userdata
-// ---------------------------------------------------------------------------
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
@@ -144,9 +127,6 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
     1
 }
 
-// ---------------------------------------------------------------------------
-// backend:update_song_path(path) -> nil | (nil, err)
-// ---------------------------------------------------------------------------
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn update_song_path(L: *mut lua_State) -> c_int {
@@ -168,9 +148,6 @@ unsafe fn update_song_path_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// backend:set_new_instrument_indexes({{id,idx}, ...}) -> nil | (nil, err)
-// ---------------------------------------------------------------------------
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn set_new_instrument_indexes(L: *mut lua_State) -> c_int {
@@ -207,10 +184,6 @@ unsafe fn set_new_instrument_indexes_inner(L: *mut lua_State) -> Result<()> {
         Ok(())
     }
 }
-
-// ---------------------------------------------------------------------------
-// backend:set_new_phrase_indexes(instrument_id, {{id,idx}, ...}) -> nil | (nil, err)
-// ---------------------------------------------------------------------------
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn set_new_phrase_indexes(L: *mut lua_State) -> c_int {
@@ -249,10 +222,6 @@ unsafe fn set_new_phrase_indexes_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// backend:register_script(instr_id, instr_name, phrase_id, phrase_name [, body])
-//   -> path | (nil, err)
-// ---------------------------------------------------------------------------
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
@@ -272,7 +241,6 @@ unsafe fn register_script_inner(L: *mut lua_State) -> Result<()> {
         let phrase_id = PhraseId::from(lua_tointeger(L, 4));
         let phrase_name = get_string_or_error(L, 5)?;
 
-        // Argument 6 is optional: nil means None
         let script_body: Option<String> = if lua_type(L, 6) == LUA_TNIL || lua_gettop(L) < 6 {
             None
         } else {
@@ -293,9 +261,6 @@ unsafe fn register_script_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// backend:unregister_script(instr_id, phrase_id) -> bak_path | (nil, err)
-// ---------------------------------------------------------------------------
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn unregister_script(L: *mut lua_State) -> c_int {
@@ -321,9 +286,6 @@ unsafe fn unregister_script_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// backend:rename_script(instr_id, phrase_id, new_name) -> nil | (nil, err)
-// ---------------------------------------------------------------------------
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn rename_script(L: *mut lua_State) -> c_int {
@@ -348,9 +310,6 @@ unsafe fn rename_script_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// backend:rename_instrument(instr_id, new_name) -> nil | (nil, err)
-// ---------------------------------------------------------------------------
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn rename_instrument(L: *mut lua_State) -> c_int {
@@ -374,10 +333,6 @@ unsafe fn rename_instrument_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// backend:unregister_instrument(instr_id) -> nil | (nil, err)
-// ---------------------------------------------------------------------------
-
 #[allow(non_snake_case)]
 unsafe extern "C" fn unregister_instrument(L: *mut lua_State) -> c_int {
     unsafe {
@@ -399,13 +354,6 @@ unsafe fn unregister_instrument_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// backend:take_changes() -> { {instrument_id=…, …}, … } | (nil, err)
-//
-// Each element is a table with fields:
-//   instrument_id, instrument_name, phrase_id, phrase_name, script_body
-// ---------------------------------------------------------------------------
-
 #[allow(non_snake_case)]
 unsafe extern "C" fn take_changes(L: *mut lua_State) -> c_int {
     unsafe {
@@ -422,17 +370,13 @@ unsafe fn take_changes_inner(L: *mut lua_State) -> Result<()> {
         let backend = get_backend(L)?;
         let changes = backend.take_changes()?;
 
-        // Create the outer array table
         lua_createtable(L, changes.len() as c_int, 0);
 
         for (i, change) in changes.iter().enumerate() {
-            // Create a table for each ScriptChange: 5 named fields
-            // Stack: [outer]
             lua_createtable(L, 0, 5);
-            // Stack: [outer, change]
 
             push_rust_string(L, "instrument_id");
-            lua_pushinteger(L,change.instrument_id.into());
+            lua_pushinteger(L, change.instrument_id.into());
             lua_settable(L, -3);
 
             push_rust_string(L, "instrument_name");
@@ -451,24 +395,16 @@ unsafe fn take_changes_inner(L: *mut lua_State) -> Result<()> {
             push_rust_string(L, &change.script_body);
             lua_settable(L, -3);
 
-            // Stack: [outer, change]
-            // Set outer[i+1] = change
             lua_pushinteger(L, (i + 1) as i64);
             lua_pushvalue(L, -2);
-            // Stack: [outer, change, key, change_copy]
             lua_settable(L, -4);
-            // Stack: [outer, change]
             lua_pop(L, 1);
-            // Stack: [outer]
         }
 
         Ok(())
     }
 }
 
-// ---------------------------------------------------------------------------
-// __gc metamethod
-// ---------------------------------------------------------------------------
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn backend_gc(L: *mut lua_State) -> c_int {
@@ -483,9 +419,6 @@ unsafe extern "C" fn backend_gc(L: *mut lua_State) -> c_int {
     0
 }
 
-// ---------------------------------------------------------------------------
-// Registration tables
-// ---------------------------------------------------------------------------
 
 const RUST_BACKEND_OBJECT_META: [luaL_Reg; 11] = [
     luaL_Reg { name: b"__gc\0".as_ptr() as *const c_char, func: backend_gc as lua_CFunction },
@@ -525,7 +458,6 @@ const RUST_BACKEND_OBJECT_META: [luaL_Reg; 11] = [
         name: b"update_song_path\0".as_ptr() as *const c_char,
         func: update_song_path as lua_CFunction,
     },
-    // sentinel
     luaL_Reg { name: null(), func: null() },
 ];
 
