@@ -1,5 +1,5 @@
 use crate::indexes::{InstrumentId, InstrumentIndex, PhraseId, PhraseIndex};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use sanitize_filename::{sanitize_with_options, Options};
 use std::collections::HashMap;
 use std::fs;
@@ -168,7 +168,7 @@ mod test {
         let dir_path_str: &str = path_buf.to_str().unwrap();
         assert!(generated_script_path.to_str().unwrap().contains(dir_path_str));
 
-        let generated_script_dir = generated_script_path.parent().unwrap();
+        let _ = generated_script_path.parent().unwrap();
 
         assert_eq!(
             generated_script_path.to_str().unwrap(),

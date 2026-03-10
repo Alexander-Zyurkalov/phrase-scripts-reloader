@@ -8,7 +8,6 @@ use crate::backend::Backend;
 use crate::indexes::{InstrumentId, InstrumentIndex, PhraseId, PhraseIndex};
 use anyhow::{anyhow, Context, Error, Result};
 use std::ffi::{c_void, CStr};
-use std::fmt::Display;
 use std::os::raw::{c_char, c_int};
 use std::ptr::{null, null_mut};
 use std::time::Duration;
@@ -55,24 +54,27 @@ unsafe extern "C" {
 
 const LUA_REGISTRYINDEX: c_int = -10000;
 const LUA_TNIL: c_int = 0;
-const LUA_TSTRING: c_int = 4;
 
 const BACKEND_CLASS_MT_NAME: *const c_char = b"RustBackend\0".as_ptr() as *const c_char;
 
 #[inline]
 #[allow(non_snake_case)]
 unsafe fn lua_pop(L: *mut lua_State, n: c_int) {
-    lua_settop(L, -n - 1);
+    unsafe {
+        lua_settop(L, -n - 1);
+    }
 }
 
 #[allow(non_snake_case)]
 unsafe fn make_lua_error(L: *mut lua_State, err: Error) -> c_int {
-    lua_pushnil(L);
-    let err_cstring = std::ffi::CString::new(err.to_string()).unwrap_or_else(|_| {
-        std::ffi::CString::new("Can't even make an error message".to_string()).unwrap()
-    });
-    lua_pushstring(L, err_cstring.as_ptr());
-    2
+    unsafe {
+        lua_pushnil(L);
+        let err_cstring = std::ffi::CString::new(err.to_string()).unwrap_or_else(|_| {
+            std::ffi::CString::new("Can't even make an error message".to_string()).unwrap()
+        });
+        lua_pushstring(L, err_cstring.as_ptr());
+        2
+    }
 }
 
 #[allow(non_snake_case)]
@@ -92,19 +94,23 @@ unsafe fn get_string_or_error(L: *mut lua_State, argument_num: i32) -> Result<St
 
 #[allow(non_snake_case)]
 unsafe fn get_backend(L: *mut lua_State) -> Result<&'static mut Backend> {
-    let user_data = lua_touserdata(L, 1) as *mut *mut Backend;
-    if user_data.is_null() || (*user_data).is_null() {
-        return Err(anyhow!("Invalid Backend userdata"));
+    unsafe {
+        let user_data = lua_touserdata(L, 1) as *mut *mut Backend;
+        if user_data.is_null() || (*user_data).is_null() {
+            return Err(anyhow!("Invalid Backend userdata"));
+        }
+        let backend = &mut **user_data;
+        Ok(backend)
     }
-    let backend = &mut **user_data;
-    Ok(backend)
 }
 
 #[allow(non_snake_case)]
 unsafe fn push_rust_string(L: *mut lua_State, s: &str) {
-    let cstring = std::ffi::CString::new(s)
-        .unwrap_or_else(|_| std::ffi::CString::new("<invalid string>").unwrap());
-    lua_pushstring(L, cstring.as_ptr());
+    unsafe {
+        let cstring = std::ffi::CString::new(s)
+            .unwrap_or_else(|_| std::ffi::CString::new("<invalid string>").unwrap());
+        lua_pushstring(L, cstring.as_ptr());
+    }
 }
 
 #[allow(non_snake_case)]
@@ -127,7 +133,6 @@ unsafe extern "C" fn new(L: *mut lua_State) -> c_int {
     1
 }
 
-
 #[allow(non_snake_case)]
 unsafe extern "C" fn update_song_path(L: *mut lua_State) -> c_int {
     unsafe {
@@ -147,7 +152,6 @@ unsafe fn update_song_path_inner(L: *mut lua_State) -> Result<()> {
         Ok(())
     }
 }
-
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn set_new_instrument_indexes(L: *mut lua_State) -> c_int {
@@ -222,7 +226,6 @@ unsafe fn set_new_phrase_indexes_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-
 #[allow(non_snake_case)]
 unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
     unsafe {
@@ -261,7 +264,6 @@ unsafe fn register_script_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-
 #[allow(non_snake_case)]
 unsafe extern "C" fn unregister_script(L: *mut lua_State) -> c_int {
     unsafe {
@@ -286,7 +288,6 @@ unsafe fn unregister_script_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-
 #[allow(non_snake_case)]
 unsafe extern "C" fn rename_script(L: *mut lua_State) -> c_int {
     unsafe {
@@ -309,7 +310,6 @@ unsafe fn rename_script_inner(L: *mut lua_State) -> Result<()> {
         Ok(())
     }
 }
-
 
 #[allow(non_snake_case)]
 unsafe extern "C" fn rename_instrument(L: *mut lua_State) -> c_int {
@@ -405,7 +405,6 @@ unsafe fn take_changes_inner(L: *mut lua_State) -> Result<()> {
     }
 }
 
-
 #[allow(non_snake_case)]
 unsafe extern "C" fn backend_gc(L: *mut lua_State) -> c_int {
     println!("Destructor was called");
@@ -418,7 +417,6 @@ unsafe extern "C" fn backend_gc(L: *mut lua_State) -> c_int {
     }
     0
 }
-
 
 const RUST_BACKEND_OBJECT_META: [luaL_Reg; 11] = [
     luaL_Reg { name: b"__gc\0".as_ptr() as *const c_char, func: backend_gc as lua_CFunction },

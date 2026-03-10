@@ -458,7 +458,7 @@ mod test {
 
     #[test]
     fn update_song_path() {
-        let (tmp_dir, song_path, mut backend) = setup("filename.xrns");
+        let (tmp_dir, _song_path, mut backend) = setup("filename.xrns");
 
         let instrument_id = InstrumentId::from(3);
         let instrument_index = InstrumentIndex::try_from(1).unwrap();
@@ -476,7 +476,6 @@ mod test {
             .unwrap()
             .to_owned();
 
-        let old_song_path = backend.script_path_registry.get_song_path().to_owned();
         let new_song_path = tmp_dir.path().join("new_filename.xrns");
         let result = backend.update_song_path(new_song_path.as_path());
 
