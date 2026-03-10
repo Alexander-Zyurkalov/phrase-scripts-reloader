@@ -105,6 +105,7 @@ unsafe fn lua_pop(L: *mut lua_State, n: c_int) {
 //     }
 //  }
 
+#[allow(non_snake_case)]
 unsafe fn make_lua_error(L: *mut lua_State, err: Error) -> c_int {
     lua_pushnil(L);
     let err_cstring = std::ffi::CString::new(err.to_string()).unwrap_or_else(|err| {
@@ -114,6 +115,7 @@ unsafe fn make_lua_error(L: *mut lua_State, err: Error) -> c_int {
     2
 }
 
+#[allow(non_snake_case)]
 unsafe fn get_string_or_error(L: *mut lua_State, argument_num: i32) -> Result<String> {
     unsafe {
         let c_str: *const c_char = lua_tolstring(L, argument_num, null_mut());
@@ -174,6 +176,7 @@ unsafe fn get_backend(L: *mut lua_State) -> Result<&'static mut Backend> {
     Ok(backend)
 }
 
+#[allow(non_snake_case)]
 unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
     unsafe {
         match register_script_inner(L) {
@@ -183,6 +186,7 @@ unsafe extern "C" fn register_script(L: *mut lua_State) -> c_int {
     }
 }
 
+#[allow(non_snake_case)]
 unsafe fn register_script_inner(L: *mut lua_State) -> Result<()> {
     unsafe {
         let instrument_id = lua_tointeger(L, 2);
