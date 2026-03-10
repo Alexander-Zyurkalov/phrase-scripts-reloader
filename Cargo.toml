@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "phrase_scripts_reloader"
-crate-type=["cdylib"]
+name = "rust_backend"
+crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1.0.100"

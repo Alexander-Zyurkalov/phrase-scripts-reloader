@@ -25,6 +25,13 @@ function M.new(rust_backend, registry)
     return self
 end
 
+--- Helper: log a rust_backend error to the console
+--- @param context string Description of the operation that failed
+--- @param err string The error message
+local function log_backend_error(context, err)
+    print("PhraseScriptsReloader [ERROR] " .. context .. ": " .. tostring(err))
+end
+
 --- @param notification {type: string, index1: number, index2: number}
 function M:swap_instrument_indexes(notification)
     local index1 = notification.index1
@@ -42,7 +49,10 @@ function M:swap_instrument_indexes(notification)
     if id2 then
         table.insert(pairs, { id2, index2 })
     end
-    self.rust_backend:set_new_instrument_indexes(pairs)
+    local _, err = self.rust_backend:set_new_instrument_indexes(pairs)
+    if err then
+        log_backend_error("set_new_instrument_indexes", err)
+    end
 end
 
 --- @param instrument_id number
@@ -63,7 +73,10 @@ function M:swap_phrases_indexes(instrument_id, notification)
     if phrase_id2 then
         table.insert(pairs, { phrase_id2, index2 })
     end
-    self.rust_backend:set_new_phrase_indexes(instrument_id, pairs)
+    local _, err = self.rust_backend:set_new_phrase_indexes(instrument_id, pairs)
+    if err then
+        log_backend_error("set_new_phrase_indexes (instrument " .. instrument_id .. ")", err)
+    end
 end
 
 --- @param notification {type: string, index: number}
@@ -72,7 +85,10 @@ function M:remove_instrument(notification)
 
     local instrument_id, instrument_data = self.registry:find_instrument_by_index(removed_index)
     if instrument_data then
-        self.rust_backend:unregister_instrument(instrument_id)
+        local _, err = self.rust_backend:unregister_instrument(instrument_id)
+        if err then
+            log_backend_error("unregister_instrument (id " .. instrument_id .. ")", err)
+        end
         self.registry:unregister_instrument(instrument_id)
     end
 end
@@ -84,7 +100,10 @@ function M:remove_phrase(instrument_id, notification)
     local phrase_id, phrase_data = self.registry:find_phrase_by_index(instrument_id, removed_index)
     if phrase_id and phrase_data then
         if phrase_data.is_script_registered then
-            self.rust_backend:unregister_script(instrument_id, phrase_id)
+            local _, err = self.rust_backend:unregister_script(instrument_id, phrase_id)
+            if err then
+                log_backend_error("unregister_script (instrument " .. instrument_id .. ", phrase " .. phrase_id .. ")", err)
+            end
         end
         self.registry:remove_phrase(instrument_id, phrase_id)
     end
@@ -95,10 +114,14 @@ end
 --- @param new_instrument_name string
 function M:rename_instrument(instrument_id, new_instrument_name)
     local instrument_data = self.registry:get_instrument_by_id(instrument_id)
-    self.rust_backend:rename_instrument(
+    local _, err = self.rust_backend:rename_instrument(
             instrument_id,
             new_instrument_name
     )
+    if err then
+        log_backend_error("rename_instrument (id " .. instrument_id .. ")", err)
+        return
+    end
     instrument_data.name = new_instrument_name
 end
 
@@ -110,16 +133,28 @@ function M:register_script(instrument_id, phrase_id, script_text)
     local phrase_data = self.registry:get_phrase_by_id(instrument_id, phrase_id)
 
     -- Provide the ID-to-index mapping to the Rust backend
-    self.rust_backend:set_new_instrument_indexes({ { instrument_id, instrument_data.current_index } })
-    self.rust_backend:set_new_phrase_indexes(instrument_id, { { phrase_id, phrase_data.current_index } })
+    local _, err = self.rust_backend:set_new_instrument_indexes({ { instrument_id, instrument_data.current_index } })
+    if err then
+        log_backend_error("set_new_instrument_indexes during register_script", err)
+        return
+    end
+    local _, err2 = self.rust_backend:set_new_phrase_indexes(instrument_id, { { phrase_id, phrase_data.current_index } })
+    if err2 then
+        log_backend_error("set_new_phrase_indexes during register_script", err2)
+        return
+    end
 
-    self.rust_backend:register_script(
+    local _, err3 = self.rust_backend:register_script(
             instrument_id,
             instrument_data.name,
             phrase_id,
             phrase_data.name,
             script_text
     )
+    if err3 then
+        log_backend_error("register_script (instrument " .. instrument_id .. ", phrase " .. phrase_id .. ")", err3)
+        return
+    end
     phrase_data.is_script_registered = true
 end
 
@@ -127,10 +162,14 @@ end
 --- @param phrase_id number
 function M:unregister_script(instrument_id, phrase_id)
     local phrase_data = self.registry:get_phrase_by_id(instrument_id, phrase_id)
-    self.rust_backend:unregister_script(
+    local _, err = self.rust_backend:unregister_script(
             instrument_id,
             phrase_id
     )
+    if err then
+        log_backend_error("unregister_script (instrument " .. instrument_id .. ", phrase " .. phrase_id .. ")", err)
+        return
+    end
     phrase_data.is_script_registered = false
 end
 
@@ -143,11 +182,15 @@ function M:rename_phrase(instrument_id, phrase_id, new_name, is_playing_script)
     local phrase_data = self.registry:get_phrase_by_id(instrument_id, phrase_id)
 
     if is_playing_script then
-        self.rust_backend:rename_script(
+        local _, err = self.rust_backend:rename_script(
                 instrument_id,
                 phrase_id,
                 new_name
         )
+        if err then
+            log_backend_error("rename_script (instrument " .. instrument_id .. ", phrase " .. phrase_id .. ")", err)
+            return
+        end
     end
 
     phrase_data.name = new_name
@@ -158,7 +201,12 @@ end
 --- @return {instrument_index: number, phrase_index: number, phrase_name: string, script_body: string}[] validated_changes
 --- @return {message: string, path: string}[] errors
 function M:take_changes()
-    local raw_changes = self.rust_backend:take_changes()
+    local raw_changes, err = self.rust_backend:take_changes()
+    if err then
+        log_backend_error("take_changes", err)
+        return {}, {}
+    end
+
     local validated_changes = {}
     local errors = {}
 
